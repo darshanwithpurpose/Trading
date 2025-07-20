@@ -4,27 +4,32 @@ import pandas as pd
 import numpy as np
 from sklearn.linear_model import LinearRegression
 import matplotlib.pyplot as plt
+import datetime
 
-# Streamlit page config
+# App settings
 st.set_page_config(page_title="AI Stock Predictor", layout="centered")
 st.title("📈 AI Stock Predictor for Indian Market")
-st.markdown("Predict the **next day's closing price** using Machine Learning and technical indicators like MA & RSI.")
+st.markdown("Predict the **next day's closing price** using AI and technical indicators.")
 
-# User inputs
+# User Input: Stock Symbol
 ticker = st.text_input("Enter NSE stock symbol (e.g., RELIANCE.NS):", "RELIANCE.NS")
-start_date = st.date_input("Start date", pd.to_datetime("2022-01-01"))
-end_date = st.date_input("End date", pd.to_datetime("2024-12-31"))
 
+# Always use latest 1 year of data
+end_date = datetime.date.today()
+start_date = end_date - datetime.timedelta(days=365)
+st.caption(f"📅 Using data from **{start_date}** to **{end_date}**")
+
+# Prediction trigger
 if st.button("🔮 Predict Closing Price"):
-    with st.spinner("📊 Fetching data and predicting..."):
-        # Download stock data
+    with st.spinner("Fetching data and running model..."):
+        # Download data
         data = yf.download(ticker, start=start_date, end=end_date)
 
         if data.empty:
-            st.error("❌ No data found. Please check the symbol or date range.")
+            st.error("❌ No data found. Check stock symbol.")
         else:
             try:
-                # Add technical indicators
+                # Technical Indicators
                 data['MA7'] = data['Close'].rolling(window=7).mean()
                 data['MA21'] = data['Close'].rolling(window=21).mean()
 
@@ -34,23 +39,22 @@ if st.button("🔮 Predict Closing Price"):
                 rs = gain / loss
                 data['RSI'] = 100 - (100 / (1 + rs))
 
-                # Create target column (next day's closing price)
+                # Target column
                 data['Target'] = data['Close'].shift(-1)
 
-                # Select features
+                # Final dataset
                 features = ['Close', 'MA7', 'MA21', 'RSI', 'Volume']
                 data = data[features + ['Target']].replace([np.inf, -np.inf], np.nan).dropna()
 
-                # Prepare data
                 X = data[features]
                 y = data['Target']
 
-                # Train ML model
+                # Train model
                 model = LinearRegression()
                 model.fit(X, y)
                 prediction = model.predict(X)
 
-                # Display results
+                # Plot result
                 st.subheader("📊 Actual vs Predicted Closing Price")
                 fig, ax = plt.subplots(figsize=(10, 5))
                 ax.plot(y.values, label="Actual", color='blue')
@@ -60,8 +64,8 @@ if st.button("🔮 Predict Closing Price"):
                 ax.legend()
                 st.pyplot(fig)
 
+                # Final predicted price
                 st.subheader("🔮 Predicted Next Close Price")
-                st.success(f"📌 ₹{prediction[-1]:.2f} (Based on the most recent available data)")
+                st.success(f"📌 ₹{prediction[-1]:.2f} (Based on latest available data)")
 
-            except Exception as e:
-                st.error(f"🚫 Prediction failed due to: {str(e)}")
+                # Show last date used

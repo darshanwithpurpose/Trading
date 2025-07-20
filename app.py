@@ -1,88 +1,80 @@
 import streamlit as st
 import pandas as pd
 import yfinance as yf
-import datetime
-from nsepython import nse_eq
+from datetime import datetime, timedelta
+import numpy as np
 
-# Utility: Get Nifty50 symbols dynamically
+# Function to get live Nifty 50 symbols from NSE website
 @st.cache_data
 def get_nifty50_symbols():
     try:
-        df = nse_eq("NIFTY 50")
-        return df['data']['symbol']
-    except:
-        st.error("Failed to load Nifty50 symbols.")
+        url = "https://archives.nseindia.com/content/indices/ind_nifty50list.csv"
+        df = pd.read_csv(url)
+        symbols = df['Symbol'].tolist()
+        return symbols
+    except Exception as e:
+        st.error("⚠️ Failed to load Nifty50 symbols from NSE.")
         return []
 
-# Utility: Technical Indicators
-def calculate_indicators(df):
-    df['EMA9'] = df['Close'].ewm(span=9).mean()
-    df['EMA21'] = df['Close'].ewm(span=21).mean()
-    delta = df['Close'].diff()
-    gain = (delta.where(delta > 0, 0)).rolling(14).mean()
-    loss = (-delta.where(delta < 0, 0)).rolling(14).mean()
-    rs = gain / loss
-    df['RSI'] = 100 - (100 / (1 + rs))
-    exp1 = df['Close'].ewm(span=12, adjust=False).mean()
-    exp2 = df['Close'].ewm(span=26, adjust=False).mean()
-    df['MACD'] = exp1 - exp2
-    df['Signal'] = df['MACD'].ewm(span=9, adjust=False).mean()
-    return df
+# RSI Calculation
+def calculate_rsi(data, window=14):
+    delta = data['Close'].diff()
+    gain = delta.clip(lower=0)
+    loss = -1 * delta.clip(upper=0)
+    avg_gain = gain.rolling(window=window).mean()
+    avg_loss = loss.rolling(window=window).mean()
+    rs = avg_gain / avg_loss
+    rsi = 100 - (100 / (1 + rs))
+    return rsi
+
+# MACD Calculation
+def calculate_macd(data):
+    ema12 = data['Close'].ewm(span=12, adjust=False).mean()
+    ema26 = data['Close'].ewm(span=26, adjust=False).mean()
+    macd = ema12 - ema26
+    signal = macd.ewm(span=9, adjust=False).mean()
+    return macd, signal
 
 # Strategy Logic
-def check_strategy(df):
-    last = df.iloc[-1]
-    buy = (
-        last['EMA9'] > last['EMA21'] and
-        last['MACD'] > last['Signal'] and
-        last['RSI'] < 70 and last['RSI'] > 45
-    )
-    sell = (
-        last['EMA9'] < last['EMA21'] and
-        last['MACD'] < last['Signal'] and
-        last['RSI'] > 70
-    )
-    if buy:
-        return "BUY"
-    elif sell:
-        return "SELL"
-    else:
-        return "HOLD"
+def generate_signals(df):
+    df['RSI'] = calculate_rsi(df)
+    df['MACD'], df['Signal'] = calculate_macd(df)
+    df['Buy'] = (df['RSI'] < 30) & (df['MACD'] > df['Signal'])
+    df['Sell'] = (df['RSI'] > 70) & (df['MACD'] < df['Signal'])
+    return df
 
-# Main Streamlit App
-st.title("📈 Nifty 50 AI Strategy Signal App")
+# App UI
+st.title("📈 Nifty 50 Buy/Sell Signal App")
+st.write("Strategy: RSI < 30 and MACD > Signal = 📥 BUY | RSI > 70 and MACD < Signal = 📤 SELL")
+
+# Get symbols
 nifty_symbols = get_nifty50_symbols()
+if not nifty_symbols:
+    st.stop()
 
-selected = st.multiselect("📊 Select stocks to analyze", nifty_symbols, default=nifty_symbols[:5])
+selected_symbols = st.multiselect("Select stocks to scan", nifty_symbols, default=nifty_symbols[:5])
+start_date = datetime.today() - timedelta(days=30)
 
-end = datetime.datetime.today()
-start = end - datetime.timedelta(days=30)
-
-results = []
-
-for symbol in selected:
+for symbol in selected_symbols:
+    st.subheader(f"📊 {symbol}")
     try:
-        df = yf.download(symbol + ".NS", start=start, end=end)
-        if df.empty: continue
-        df = calculate_indicators(df)
-        signal = check_strategy(df)
-        results.append({
-            "Stock": symbol,
-            "Signal": signal,
-            "Last Close": df['Close'].iloc[-1],
-            "RSI": round(df['RSI'].iloc[-1], 2),
-            "MACD": round(df['MACD'].iloc[-1], 2)
-        })
+        df = yf.download(f"{symbol}.NS", start=start_date)
+        if df.empty:
+            st.warning(f"No data for {symbol}")
+            continue
+
+        df = generate_signals(df)
+
+        # Plot
+        st.line_chart(df[['Close']])
+
+        # Show signals
+        recent = df.tail(5)
+        if recent['Buy'].iloc[-1]:
+            st.success("📥 BUY signal detected!")
+        elif recent['Sell'].iloc[-1]:
+            st.error("📤 SELL signal detected!")
+        else:
+            st.info("➖ No signal currently.")
     except Exception as e:
-        st.warning(f"Error fetching {symbol}: {e}")
-
-# Display signals
-if results:
-    result_df = pd.DataFrame(results)
-    st.dataframe(result_df)
-
-# Optional: Filter only BUY or SELL
-filter_signal = st.selectbox("🔍 Filter by Signal", ["All", "BUY", "SELL"])
-if filter_signal != "All":
-    st.subheader(f"{filter_signal} Recommendations:")
-    st.dataframe(result_df[result_df["Signal"] == filter_signal])
+        st.warning(f"Error fetching data for {symbol}: {e}")

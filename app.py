@@ -5,45 +5,31 @@ import numpy as np
 from sklearn.linear_model import LinearRegression
 import matplotlib.pyplot as plt
 
+st.set_page_config(page_title="AI Stock Predictor", layout="centered")
 st.title("📈 AI Stock Predictor for Indian Market")
-st.markdown("Predict the next day's closing price with simple machine learning.")
+st.markdown("Predict the **next day's closing price** using simple machine learning and technical indicators.")
 
+# Input section
 ticker = st.text_input("Enter NSE stock symbol (e.g., RELIANCE.NS):", "RELIANCE.NS")
 start_date = st.date_input("Start date", pd.to_datetime("2022-01-01"))
 end_date = st.date_input("End date", pd.to_datetime("2024-12-31"))
 
-if st.button("Predict"):
-    data = yf.download(ticker, start=start_date, end=end_date)
-    
-    if data.empty:
-        st.error("⚠️ Invalid symbol or no data found.")
-    else:
-        # Indicators
-        data['MA7'] = data['Close'].rolling(window=7).mean()
-        data['MA21'] = data['Close'].rolling(window=21).mean()
-        delta = data['Close'].diff()
-        gain = (delta.where(delta > 0, 0)).rolling(14).mean()
-        loss = (-delta.where(delta < 0, 0)).rolling(14).mean()
-        rs = gain / loss
-        data['RSI'] = 100 - (100 / (1 + rs))
-        data['Target'] = data['Close'].shift(-1)
-        data.dropna(inplace=True)
-        
-        features = ['Close', 'MA7', 'MA21', 'RSI', 'Volume']
-        X = data[features]
-        y = data['Target']
+if st.button("🔮 Predict Closing Price"):
+    with st.spinner("Fetching data and predicting..."):
+        try:
+            data = yf.download(ticker, start=start_date, end=end_date)
 
-        model = LinearRegression()
-        model.fit(X, y)
-        prediction = model.predict(X)
+            if data.empty:
+                st.error("⚠️ No data found. Please check the symbol or date range.")
+            else:
+                # --- Add Technical Indicators ---
+                data['MA7'] = data['Close'].rolling(window=7).mean()
+                data['MA21'] = data['Close'].rolling(window=21).mean()
 
-        # Output
-        st.subheader("📉 Actual vs Predicted Closing Price")
-        plt.figure(figsize=(10, 5))
-        plt.plot(y.values, label="Actual")
-        plt.plot(prediction, label="Predicted")
-        plt.legend()
-        st.pyplot(plt)
+                delta = data['Close'].diff()
+                gain = delta.where(delta > 0, 0).rolling(window=14).mean()
+                loss = -delta.where(delta < 0, 0).rolling(window=14).mean()
+                rs = gain / loss
+                data['RSI'] = 100 - (100 / (1 + rs))
 
-        st.subheader("🔮 Next Day Prediction")
-        st.write(f"Predicted Closing Price: ₹{prediction[-1]:.2f}")
+                # Target: Next da

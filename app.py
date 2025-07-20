@@ -4,7 +4,7 @@ import yfinance as yf
 from datetime import datetime, timedelta
 import numpy as np
 
-# 1. Nifty 50 static list (fallback)
+# 🔁 Cache static fallback list of Nifty 50 symbols
 @st.cache_data
 def get_nifty50_symbols():
     return [
@@ -19,7 +19,7 @@ def get_nifty50_symbols():
         "ICICIPRULI", "TATACONSUM", "SHREECEM", "MM", "UPL"
     ]
 
-# 2. Indicators: RSI & MACD
+# 📉 RSI Calculation
 def calculate_rsi(data, window=14):
     delta = data['Close'].diff()
     gain = delta.clip(lower=0).rolling(window).mean()
@@ -27,6 +27,7 @@ def calculate_rsi(data, window=14):
     rs = gain / loss
     return 100 - (100 / (1 + rs))
 
+# 📊 MACD Calculation
 def calculate_macd(data):
     ema12 = data['Close'].ewm(span=12, adjust=False).mean()
     ema26 = data['Close'].ewm(span=26, adjust=False).mean()
@@ -34,7 +35,7 @@ def calculate_macd(data):
     signal_line = macd_line.ewm(span=9, adjust=False).mean()
     return macd_line, signal_line
 
-# 3. Strategy: Buy/Sell logic
+# ✅ Strategy Logic
 def generate_signals(df):
     df['RSI'] = calculate_rsi(df)
     df['MACD'], df['SignalLine'] = calculate_macd(df)
@@ -42,29 +43,35 @@ def generate_signals(df):
     df['Sell'] = (df['RSI'] > 70) & (df['MACD'] < df['SignalLine'])
     return df.dropna()
 
-# 4. Build the Streamlit App
-st.title("📈 Nifty 50 Strategy: RSI + MACD Buy/Sell Signals")
-st.write("Buy when RSI < 30 & MACD > SignalLine; Sell when RSI > 70 & MACD < SignalLine")
+# 🚀 Streamlit UI
+st.title("📈 Nifty 50 AI Strategy: RSI + MACD Signals")
+st.write("Buy: RSI < 30 and MACD > Signal | Sell: RSI > 70 and MACD < Signal")
 
 symbols = get_nifty50_symbols()
-selected = st.multiselect("Pick stocks to scan", symbols, default=symbols[:5])
+selected = st.multiselect("Select Stocks", symbols, default=symbols[:5])
 
 start_date = datetime.today() - timedelta(days=30)
 
 for symbol in selected:
-    st.subheader(symbol)
-    df = yf.download(f"{symbol}.NS", start=start_date, progress=False)
-    if df.empty:
-        st.warning("No data for this stock.")
-        continue
+    st.subheader(f"🔍 {symbol}")
+    try:
+        df = yf.download(f"{symbol}.NS", start=start_date, progress=False)
+        if df.empty or 'Close' not in df.columns:
+            st.warning("⚠️ No valid data returned.")
+            continue
 
-    df = generate_signals(df)
-    st.line_chart(df[['Close']])
+        df = generate_signals(df)
 
-    latest = df.iloc[-1]
-    if latest['Buy']:
-        st.success("📥 BUY Signal!")
-    elif latest['Sell']:
-        st.error("📤 SELL Signal!")
-    else:
-        st.info("⏸ No signal right now.")
+        if 'Close' in df.columns:
+            st.line_chart(df[['Close']])
+
+        latest = df.iloc[-1]
+        if latest['Buy']:
+            st.success("📥 BUY Signal")
+        elif latest['Sell']:
+            st.error("📤 SELL Signal")
+        else:
+            st.info("⏸ No signal right now.")
+
+    except Exception as e:
+        st.error(f"❌ Failed to process {symbol}: {e}")

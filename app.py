@@ -1,58 +1,60 @@
 import streamlit as st
 import pandas as pd
 import yfinance as yf
-from datetime import datetime, timedelta
+import datetime
 
-# ----------------------------
-# Title
-# ----------------------------
-st.title("📈 Nifty 50: Buy/Sell Signal Detector (Last 1 Month)")
-
-# ----------------------------
-# Fetch Nifty50 Stocks (Fallback)
-# ----------------------------
 @st.cache_data
 def get_nifty50_symbols():
     try:
-        import requests
         url = "https://archives.nseindia.com/content/indices/ind_nifty50list.csv"
-        headers = {"User-Agent": "Mozilla/5.0"}
-        response = requests.get(url, headers=headers)
-        df = pd.read_csv(pd.compat.StringIO(response.text))
-        return list(df["Symbol"].str.strip() + ".NS")
-    except:
-        st.warning("⚠️ Could not fetch live Nifty 50 list. Using fallback list.")
-        return [
-            "RELIANCE.NS", "TCS.NS", "INFY.NS", "HDFCBANK.NS", "ICICIBANK.NS",
-            "KOTAKBANK.NS", "HINDUNILVR.NS", "LT.NS", "SBIN.NS", "ITC.NS"
-        ]
+        df = pd.read_csv(url)
+        return df['Symbol'].tolist()
+    except Exception:
+        return ['RELIANCE', 'TCS', 'INFY', 'HDFCBANK']  # fallback
 
-# ----------------------------
-# Fetch stock data
-# ----------------------------
-@st.cache_data
-def get_stock_data(ticker):
-    end = datetime.now()
-    start = end - timedelta(days=30)
-    df = yf.download(ticker, start=start, end=end)
-    if df.empty:
-        return None
-    df["MA7"] = df["Close"].rolling(window=7).mean()
-    df["MA21"] = df["Close"].rolling(window=21).mean()
+def fetch_data(symbol, period="3mo", interval="1d"):
+    ticker = yf.Ticker(symbol + ".NS")
+    df = ticker.history(period=period, interval=interval)
+    df['MA7'] = df['Close'].rolling(window=7).mean()
+    df['MA21'] = df['Close'].rolling(window=21).mean()
     return df
 
-# ----------------------------
-# Generate Buy/Sell signals
-# ----------------------------
 def generate_signals(df):
-    df["Signal"] = ""
+    df['Signal'] = ''
     for i in range(1, len(df)):
-        if df["MA7"][i] > df["MA21"][i] and df["MA7"][i - 1] <= df["MA21"][i - 1]:
-            df.at[df.index[i], "Signal"] = "Buy"
-        elif df["MA7"][i] < df["MA21"][i] and df["MA7"][i - 1] >= df["MA21"][i - 1]:
-            df.at[df.index[i], "Signal"] = "Sell"
+        if df['MA7'][i] > df['MA21'][i] and df['MA7'][i - 1] <= df['MA21'][i - 1]:
+            df.loc[df.index[i], 'Signal'] = 'BUY'
+        elif df['MA7'][i] < df['MA21'][i] and df['MA7'][i - 1] >= df['MA21'][i - 1]:
+            df.loc[df.index[i], 'Signal'] = 'SELL'
     return df
 
-# ----------------------------
-# Main logic
-# -------
+# UI
+st.title("📈 Nifty50 AI Trading Assistant")
+
+symbols = get_nifty50_symbols()
+selected_symbol = st.selectbox("Choose Nifty50 Stock", symbols)
+
+data = fetch_data(selected_symbol)
+data = generate_signals(data)
+
+st.line_chart(data[["Close", "MA7", "MA21"]])
+
+latest = data.iloc[-1]
+st.write(f"### Last Close: ₹{latest['Close']:.2f}")
+st.write(f"### Signal: {latest['Signal']}")
+
+# Buy/Sell recommendation summary
+buy_signals = []
+sell_signals = []
+
+for symbol in symbols:
+    df = fetch_data(symbol, period="1mo")
+    df = generate_signals(df)
+    if df['Signal'].iloc[-1] == 'BUY':
+        buy_signals.append(symbol)
+    elif df['Signal'].iloc[-1] == 'SELL':
+        sell_signals.append(symbol)
+
+st.subheader("📌 Recommendations for 1-Month")
+st.success(f"**Buy:** {', '.join(buy_signals)}")
+st.error(f"**Sell:** {', '.join(sell_signals)}")

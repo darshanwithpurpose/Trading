@@ -6,21 +6,20 @@ from sklearn.linear_model import LinearRegression
 import matplotlib.pyplot as plt
 import datetime
 
-# Streamlit page config
+# Streamlit config
 st.set_page_config(page_title="AI Stock Predictor", layout="centered")
 st.title("📈 AI Stock Predictor for Indian Market")
-st.markdown("Predict the **next day's closing price** using AI and technical indicators.")
+st.markdown("Predict the **next day's closing price** and see buy/sell signals based on moving averages.")
 
-# Stock symbol input
+# Input
 ticker = st.text_input("Enter NSE stock symbol (e.g., RELIANCE.NS):", "RELIANCE.NS")
 
-# Auto-date range: last 1 year
+# Date range
 end_date = datetime.date.today()
 start_date = end_date - datetime.timedelta(days=365)
 st.caption(f"📅 Using data from **{start_date}** to **{end_date}**")
 
-# Prediction button
-if st.button("🔮 Predict Closing Price"):
+if st.button("🔮 Predict & Recommend"):
     with st.spinner("Fetching data and running model..."):
         data = yf.download(ticker, start=start_date, end=end_date)
 
@@ -38,10 +37,10 @@ if st.button("🔮 Predict Closing Price"):
                 rs = gain / loss
                 data['RSI'] = 100 - (100 / (1 + rs))
 
-                # Target variable (next day's closing price)
+                # Target: next day close
                 data['Target'] = data['Close'].shift(-1)
 
-                # Features & cleanup
+                # Features
                 features = ['Close', 'MA7', 'MA21', 'RSI', 'Volume']
                 data = data[features + ['Target']].replace([np.inf, -np.inf], np.nan).dropna()
 
@@ -63,13 +62,36 @@ if st.button("🔮 Predict Closing Price"):
                 ax.legend()
                 st.pyplot(fig)
 
-                # Final prediction output
+                # Final prediction
                 st.subheader("🔮 Predicted Next Close Price")
                 st.success(f"📌 ₹{prediction[-1]:.2f} (based on latest data)")
+                st.caption(f"✅ Latest trading date: {data.index[-1].strftime('%Y-%m-%d')}")
 
-                # Show last date used
-                latest_date = data.index[-1].strftime('%Y-%m-%d')
-                st.caption(f"✅ Latest trading date used: {latest_date}")
+                # ---- 🟢 Buy / 🔴 Sell Signal Logic ----
+                st.subheader("📌 Buy / Sell Recommendations (Next 1 Month Approx.)")
+
+                data_signals = data.copy()
+                data_signals['Signal'] = 0
+                data_signals['Signal'][data_signals['MA7'] > data_signals['MA21']] = 1
+                data_signals['Position'] = data_signals['Signal'].diff()
+
+                # Show only last 20 signals (approx. 1 month of trading)
+                last_20 = data_signals.tail(60)  # more days to catch crossover within 20 days
+
+                buy_signals = last_20[last_20['Position'] == 1.0]
+                sell_signals = last_20[last_20['Position'] == -1.0]
+
+                st.write("🟢 **Buy Dates & Prices**:")
+                if not buy_signals.empty:
+                    st.dataframe(buy_signals[['Close']].rename(columns={'Close': 'Buy Price'}))
+                else:
+                    st.info("No Buy signal in the last 1 month window.")
+
+                st.write("🔴 **Sell Dates & Prices**:")
+                if not sell_signals.empty:
+                    st.dataframe(sell_signals[['Close']].rename(columns={'Close': 'Sell Price'}))
+                else:
+                    st.info("No Sell signal in the last 1 month window.")
 
             except Exception as e:
                 st.error(f"🚫 Error: {str(e)}")

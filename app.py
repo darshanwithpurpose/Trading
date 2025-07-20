@@ -1,72 +1,74 @@
 import streamlit as st
-import pandas as pd
 import yfinance as yf
+import pandas as pd
 import datetime
-from sklearn.linear_model import LinearRegression
-from sklearn.model_selection import train_test_split
 
-st.set_page_config(page_title="NIFTY 50 Stock Predictor", layout="centered")
-
-# Title
-st.title("📈 NIFTY 50 AI Stock Prediction and Signal")
-
-# Function to get NIFTY 50 stock symbols
+# ----------------------------------------
+# Utility: Fetch Nifty50 symbols from NSE
+# ----------------------------------------
 @st.cache_data
 def get_nifty50_symbols():
-    symbols = [
-        "RELIANCE", "TCS", "INFY", "HDFCBANK", "ICICIBANK", "HINDUNILVR",
-        "ITC", "LT", "SBIN", "KOTAKBANK", "AXISBANK", "ASIANPAINT", "BHARTIARTL",
-        "BAJFINANCE", "HCLTECH", "WIPRO", "MARUTI", "NTPC", "TITAN", "SUNPHARMA",
-        "POWERGRID", "NESTLEIND", "ULTRACEMCO", "TECHM", "JSWSTEEL", "TATAMOTORS",
-        "ADANIENT", "COALINDIA", "ONGC", "GRASIM", "ADANIPORTS", "HDFCLIFE", "BRITANNIA",
-        "CIPLA", "DIVISLAB", "BPCL", "HINDALCO", "HEROMOTOCO", "BAJAJ-AUTO", "SBILIFE",
-        "EICHERMOT", "DRREDDY", "BAJAJFINSV", "APOLLOHOSP", "INDUSINDBK", "ICICIPRULI",
-        "TATACONSUM", "SHREECEM", "M&M", "UPL"
-    ]
-    return [symbol + ".NS" for symbol in symbols]
+    url = "https://www1.nseindia.com/content/indices/ind_nifty50list.csv"
+    try:
+        df = pd.read_csv(url)
+        symbols = df["Symbol"].tolist()
+        return [symbol + ".NS" for symbol in symbols]
+    except Exception as e:
+        st.error("Failed to load Nifty50 symbols from NSE.")
+        return ["RELIANCE.NS", "TCS.NS", "INFY.NS"]  # fallback
 
-# Fetch historical data
-@st.cache_data
-def fetch_data(symbol, period="2mo"):
+# ----------------------------------------
+# Fetch stock data and calculate indicators
+# ----------------------------------------
+def fetch_data(symbol, period="3mo"):
     df = yf.download(symbol, period=period)
-    df.dropna(inplace=True)
+    if df.empty:
+        st.warning(f"No data returned for {symbol}")
+        return pd.DataFrame()
+    
     df["MA7"] = df["Close"].rolling(window=7).mean()
     df["MA21"] = df["Close"].rolling(window=21).mean()
-    df["Signal"] = ["Buy" if m7 > m21 else "Sell" for m7, m21 in zip(df["MA7"], df["MA21"])]
+
+    df["Signal"] = ["Buy" if m7 > m21 else "Sell" for m7, m21 in zip(df["MA7"].fillna(0), df["MA21"].fillna(0))]
     return df
 
-# Predict next day's closing price
-def predict_price(df):
-    df = df.copy()
-    df["Target"] = df["Close"].shift(-1)
-    df.dropna(inplace=True)
+# ----------------------------------------
+# Streamlit UI starts here
+# ----------------------------------------
+st.set_page_config(page_title="📈 AI Stock Advisor", layout="wide")
+st.title("🇮🇳 AI-Powered Indian Stock Advisor (Nifty 50)")
 
-    X = df[["Open", "High", "Low", "Close", "Volume"]]
-    y = df["Target"]
-
-    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2)
-    model = LinearRegression()
-    model.fit(X_train, y_train)
-
-    prediction = model.predict([X.iloc[-1]])[0]
-    return round(prediction, 2)
-
-# UI: Select stock
-nifty_symbols = get_nifty50_symbols()
-selected_stock = st.selectbox("Choose a NIFTY 50 stock", nifty_symbols)
+# Load list of stocks
+symbols = get_nifty50_symbols()
+selected_stock = st.selectbox("🔍 Select a Stock", symbols)
 
 # Fetch and display data
 df = fetch_data(selected_stock)
-st.line_chart(df[["Close", "MA7", "MA21"]])
 
-# Show recommendation
-current_signal = df["Signal"].iloc[-1]
-st.subheader(f"📊 Recommendation: **{current_signal}**")
+if not df.empty:
+    st.subheader(f"📅 Data from {df.index.min().date()} to {df.index.max().date()}")
+    
+    # Line chart: Close + MA
+    plot_cols = ["Close"]
+    if "MA7" in df.columns and "MA21" in df.columns:
+        plot_cols.extend(["MA7", "MA21"])
+    st.line_chart(df[plot_cols])
 
-# Predict tomorrow's price
-predicted_price = predict_price(df)
-st.metric("Predicted Next Close", f"₹ {predicted_price}")
+    # Show latest recommendation
+    latest_signal = df["Signal"].iloc[-1]
+    st.success(f"📊 **Latest Signal: {latest_signal}** for {selected_stock}")
 
-# Show raw data option
-if st.checkbox("Show data table"):
-    st.dataframe(df.tail(30))
+    # Buy/Sell Summary for 1-month
+    st.subheader("🗓️ Last 1 Month Recommendations")
+    one_month_ago = df.index.max() - pd.DateOffset(days=30)
+    df_month = df[df.index >= one_month_ago]
+    if not df_month.empty:
+        buy_days = df_month[df_month["Signal"] == "Buy"]
+        sell_days = df_month[df_month["Signal"] == "Sell"]
+        st.markdown(f"✅ **Buy days:** {len(buy_days)}")
+        st.markdown(f"❌ **Sell days:** {len(sell_days)}")
+    else:
+        st.info("Not enough data for 1-month analysis.")
+
+else:
+    st.error("No data to show for this stock.")

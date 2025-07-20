@@ -1,63 +1,72 @@
 import streamlit as st
 import pandas as pd
-import numpy as np
 import yfinance as yf
-from datetime import datetime, timedelta
+import datetime
+from sklearn.linear_model import LinearRegression
+from sklearn.model_selection import train_test_split
 
-st.set_page_config(page_title="Nifty 50 AI Buy/Sell Recommender", layout="wide")
+st.set_page_config(page_title="NIFTY 50 Stock Predictor", layout="centered")
 
-st.title("📊 NIFTY 50 AI Buy/Sell Recommender (1-Month)")
-st.markdown("This app dynamically fetches **NIFTY 50 stocks** and recommends **Buy/Sell** based on MA7 & MA21 crossover signals.")
+# Title
+st.title("📈 NIFTY 50 AI Stock Prediction and Signal")
 
-# --- Function to get NIFTY 50 symbols ---
+# Function to get NIFTY 50 stock symbols
 @st.cache_data
 def get_nifty50_symbols():
-    url = "https://raw.githubusercontent.com/someshkar/India-Stock-Data/main/ind_nifty50list.csv"
-    df = pd.read_csv(url)
-    return [symbol.strip() + ".NS" for symbol in df['Symbol']]
+    symbols = [
+        "RELIANCE", "TCS", "INFY", "HDFCBANK", "ICICIBANK", "HINDUNILVR",
+        "ITC", "LT", "SBIN", "KOTAKBANK", "AXISBANK", "ASIANPAINT", "BHARTIARTL",
+        "BAJFINANCE", "HCLTECH", "WIPRO", "MARUTI", "NTPC", "TITAN", "SUNPHARMA",
+        "POWERGRID", "NESTLEIND", "ULTRACEMCO", "TECHM", "JSWSTEEL", "TATAMOTORS",
+        "ADANIENT", "COALINDIA", "ONGC", "GRASIM", "ADANIPORTS", "HDFCLIFE", "BRITANNIA",
+        "CIPLA", "DIVISLAB", "BPCL", "HINDALCO", "HEROMOTOCO", "BAJAJ-AUTO", "SBILIFE",
+        "EICHERMOT", "DRREDDY", "BAJAJFINSV", "APOLLOHOSP", "INDUSINDBK", "ICICIPRULI",
+        "TATACONSUM", "SHREECEM", "M&M", "UPL"
+    ]
+    return [symbol + ".NS" for symbol in symbols]
 
-# --- Load symbols ---
-WATCHLIST = get_nifty50_symbols()
-st.success(f"✅ Loaded {len(WATCHLIST)} NIFTY 50 stocks")
+# Fetch historical data
+@st.cache_data
+def fetch_data(symbol, period="2mo"):
+    df = yf.download(symbol, period=period)
+    df.dropna(inplace=True)
+    df["MA7"] = df["Close"].rolling(window=7).mean()
+    df["MA21"] = df["Close"].rolling(window=21).mean()
+    df["Signal"] = ["Buy" if m7 > m21 else "Sell" for m7, m21 in zip(df["MA7"], df["MA21"])]
+    return df
 
-# --- Define time range (1 month) ---
-end_date = datetime.today()
-start_date = end_date - timedelta(days=30)
+# Predict next day's closing price
+def predict_price(df):
+    df = df.copy()
+    df["Target"] = df["Close"].shift(-1)
+    df.dropna(inplace=True)
 
-# --- Buy/Sell Signal Logic ---
-results = []
-progress = st.progress(0)
+    X = df[["Open", "High", "Low", "Close", "Volume"]]
+    y = df["Target"]
 
-for i, symbol in enumerate(WATCHLIST):
-    progress.progress((i + 1) / len(WATCHLIST))
-    try:
-        data = yf.download(symbol, start=start_date, end=end_date, progress=False)
-        if data.empty or len(data) < 21:
-            continue
+    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2)
+    model = LinearRegression()
+    model.fit(X_train, y_train)
 
-        data['MA7'] = data['Close'].rolling(window=7).mean()
-        data['MA21'] = data['Close'].rolling(window=21).mean()
-        data['Signal'] = np.where(data['MA7'] > data['MA21'], 1, 0)
-        data['Position'] = data['Signal'].diff()
+    prediction = model.predict([X.iloc[-1]])[0]
+    return round(prediction, 2)
 
-        last_signal = data['Position'].iloc[-1]
-        signal = "Buy" if last_signal == 1.0 else ("Sell" if last_signal == -1.0 else "-")
-        last_price = round(data['Close'].iloc[-1], 2)
+# UI: Select stock
+nifty_symbols = get_nifty50_symbols()
+selected_stock = st.selectbox("Choose a NIFTY 50 stock", nifty_symbols)
 
-        results.append({
-            "Stock": symbol.replace(".NS", ""),
-            "Signal": signal,
-            "Last Price (₹)": last_price,
-            "Date": data.index[-1].strftime("%Y-%m-%d")
-        })
+# Fetch and display data
+df = fetch_data(selected_stock)
+st.line_chart(df[["Close", "MA7", "MA21"]])
 
-    except Exception as e:
-        continue
+# Show recommendation
+current_signal = df["Signal"].iloc[-1]
+st.subheader(f"📊 Recommendation: **{current_signal}**")
 
-# --- Final Table ---
-df_result = pd.DataFrame(results)
-df_result = df_result[df_result['Signal'] != "-"].sort_values("Signal", ascending=False)
+# Predict tomorrow's price
+predicted_price = predict_price(df)
+st.metric("Predicted Next Close", f"₹ {predicted_price}")
 
-st.subheader("📋 Recommended Buy/Sell Stocks (Last 1 Month MA7/MA21 crossover)")
-st.dataframe(df_result.reset_index(drop=True), use_container_width=True)
-
+# Show raw data option
+if st.checkbox("Show data table"):
+    st.dataframe(df.tail(30))

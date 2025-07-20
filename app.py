@@ -1,97 +1,63 @@
 import streamlit as st
-import yfinance as yf
 import pandas as pd
 import numpy as np
-from sklearn.linear_model import LinearRegression
-import matplotlib.pyplot as plt
-import datetime
+import yfinance as yf
+from datetime import datetime, timedelta
 
-# Streamlit config
-st.set_page_config(page_title="AI Stock Predictor", layout="centered")
-st.title("📈 AI Stock Predictor for Indian Market")
-st.markdown("Predict the **next day's closing price** and see buy/sell signals based on moving averages.")
+st.set_page_config(page_title="Nifty 50 AI Buy/Sell Recommender", layout="wide")
 
-# Input
-ticker = st.text_input("Enter NSE stock symbol (e.g., RELIANCE.NS):", "RELIANCE.NS")
+st.title("📊 NIFTY 50 AI Buy/Sell Recommender (1-Month)")
+st.markdown("This app dynamically fetches **NIFTY 50 stocks** and recommends **Buy/Sell** based on MA7 & MA21 crossover signals.")
 
-# Date range
-end_date = datetime.date.today()
-start_date = end_date - datetime.timedelta(days=365)
-st.caption(f"📅 Using data from **{start_date}** to **{end_date}**")
+# --- Function to get NIFTY 50 symbols ---
+@st.cache_data
+def get_nifty50_symbols():
+    url = "https://raw.githubusercontent.com/someshkar/India-Stock-Data/main/ind_nifty50list.csv"
+    df = pd.read_csv(url)
+    return [symbol.strip() + ".NS" for symbol in df['Symbol']]
 
-if st.button("🔮 Predict & Recommend"):
-    with st.spinner("Fetching data and running model..."):
-        data = yf.download(ticker, start=start_date, end=end_date)
+# --- Load symbols ---
+WATCHLIST = get_nifty50_symbols()
+st.success(f"✅ Loaded {len(WATCHLIST)} NIFTY 50 stocks")
 
-        if data.empty:
-            st.error("❌ No data found. Please check the stock symbol.")
-        else:
-            try:
-                # Technical indicators
-                data['MA7'] = data['Close'].rolling(window=7).mean()
-                data['MA21'] = data['Close'].rolling(window=21).mean()
+# --- Define time range (1 month) ---
+end_date = datetime.today()
+start_date = end_date - timedelta(days=30)
 
-                delta = data['Close'].diff()
-                gain = delta.where(delta > 0, 0).rolling(window=14).mean()
-                loss = -delta.where(delta < 0, 0).rolling(window=14).mean()
-                rs = gain / loss
-                data['RSI'] = 100 - (100 / (1 + rs))
+# --- Buy/Sell Signal Logic ---
+results = []
+progress = st.progress(0)
 
-                # Target: next day close
-                data['Target'] = data['Close'].shift(-1)
+for i, symbol in enumerate(WATCHLIST):
+    progress.progress((i + 1) / len(WATCHLIST))
+    try:
+        data = yf.download(symbol, start=start_date, end=end_date, progress=False)
+        if data.empty or len(data) < 21:
+            continue
 
-                # Features
-                features = ['Close', 'MA7', 'MA21', 'RSI', 'Volume']
-                data = data[features + ['Target']].replace([np.inf, -np.inf], np.nan).dropna()
+        data['MA7'] = data['Close'].rolling(window=7).mean()
+        data['MA21'] = data['Close'].rolling(window=21).mean()
+        data['Signal'] = np.where(data['MA7'] > data['MA21'], 1, 0)
+        data['Position'] = data['Signal'].diff()
 
-                X = data[features]
-                y = data['Target']
+        last_signal = data['Position'].iloc[-1]
+        signal = "Buy" if last_signal == 1.0 else ("Sell" if last_signal == -1.0 else "-")
+        last_price = round(data['Close'].iloc[-1], 2)
 
-                # Train model
-                model = LinearRegression()
-                model.fit(X, y)
-                prediction = model.predict(X)
+        results.append({
+            "Stock": symbol.replace(".NS", ""),
+            "Signal": signal,
+            "Last Price (₹)": last_price,
+            "Date": data.index[-1].strftime("%Y-%m-%d")
+        })
 
-                # Plot: Actual vs Predicted
-                st.subheader("📊 Actual vs Predicted Closing Price")
-                fig, ax = plt.subplots(figsize=(10, 5))
-                ax.plot(y.values, label="Actual", color='blue')
-                ax.plot(prediction, label="Predicted", color='orange')
-                ax.set_xlabel("Days")
-                ax.set_ylabel("Price (INR)")
-                ax.legend()
-                st.pyplot(fig)
+    except Exception as e:
+        continue
 
-                # Final prediction
-                st.subheader("🔮 Predicted Next Close Price")
-                st.success(f"📌 ₹{prediction[-1]:.2f} (based on latest data)")
-                st.caption(f"✅ Latest trading date: {data.index[-1].strftime('%Y-%m-%d')}")
+# --- Final Table ---
+df_result = pd.DataFrame(results)
+df_result = df_result[df_result['Signal'] != "-"].sort_values("Signal", ascending=False)
 
-                # ---- 🟢 Buy / 🔴 Sell Signal Logic ----
-                st.subheader("📌 Buy / Sell Recommendations (Next 1 Month Approx.)")
+st.subheader("📋 Recommended Buy/Sell Stocks (Last 1 Month MA7/MA21 crossover)")
+st.dataframe(df_result.reset_index(drop=True), use_container_width=True)
 
-                data_signals = data.copy()
-                data_signals['Signal'] = 0
-                data_signals['Signal'][data_signals['MA7'] > data_signals['MA21']] = 1
-                data_signals['Position'] = data_signals['Signal'].diff()
-
-                # Show only last 20 signals (approx. 1 month of trading)
-                last_20 = data_signals.tail(60)  # more days to catch crossover within 20 days
-
-                buy_signals = last_20[last_20['Position'] == 1.0]
-                sell_signals = last_20[last_20['Position'] == -1.0]
-
-                st.write("🟢 **Buy Dates & Prices**:")
-                if not buy_signals.empty:
-                    st.dataframe(buy_signals[['Close']].rename(columns={'Close': 'Buy Price'}))
-                else:
-                    st.info("No Buy signal in the last 1 month window.")
-
-                st.write("🔴 **Sell Dates & Prices**:")
-                if not sell_signals.empty:
-                    st.dataframe(sell_signals[['Close']].rename(columns={'Close': 'Sell Price'}))
-                else:
-                    st.info("No Sell signal in the last 1 month window.")
-
-            except Exception as e:
-                st.error(f"🚫 Error: {str(e)}")

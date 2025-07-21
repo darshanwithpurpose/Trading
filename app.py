@@ -27,6 +27,15 @@ results_today = []
 historical_details = []
 condition_matrix = []
 
+# Initialize pass counters
+pass_counts = {
+    "Close>High_100": 0,
+    "Volume Spike": 0,
+    "RSI<80": 0,
+    "Close>EMA_150": 0,
+    "Total": 0
+}
+
 for ticker in tickers:
     try:
         df = download_data(ticker)
@@ -65,6 +74,12 @@ for ticker in tickers:
             latest['Close'] > latest['EMA_150']
         ]
 
+        pass_counts["Total"] += 1
+        pass_counts["Close>High_100"] += int(conds_today[0])
+        pass_counts["Volume Spike"] += int(conds_today[1])
+        pass_counts["RSI<80"] += int(conds_today[2])
+        pass_counts["Close>EMA_150"] += int(conds_today[3])
+
         condition_matrix.append({
             "Ticker": ticker,
             "Close>High_100": conds_today[0],
@@ -102,3 +117,13 @@ if condition_matrix:
     st.subheader("🔍 Condition Matrix for Today")
     df_cond = pd.DataFrame(condition_matrix)
     st.dataframe(df_cond)
+
+if pass_counts["Total"] > 0:
+    st.subheader("📊 Condition Pass Rate")
+    pass_df = pd.DataFrame({
+        "Condition": ["Close>High_100", "Volume Spike", "RSI<80", "Close>EMA_150"],
+        "% Passed": [
+            round(100 * pass_counts[k] / pass_counts["Total"], 2) for k in ["Close>High_100", "Volume Spike", "RSI<80", "Close>EMA_150"]
+        ]
+    })
+    st.dataframe(pass_df)

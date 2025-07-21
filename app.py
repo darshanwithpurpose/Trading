@@ -23,7 +23,6 @@ def download_data(ticker):
 
 # Always scan full Nifty 500
 tickers = get_nifty500_symbols()[:500]
-RISK_REWARD = st.sidebar.selectbox("Risk-Reward Ratio", [1, 1.5, 2], index=2)
 
 results_today = []
 historical_details = []
@@ -75,30 +74,12 @@ for ticker in tickers:
         ]
 
         if all(conds_today):
-            entry = latest['Close']
-            atr = latest['ATR']
-            sl = entry - atr
-            tp = entry + atr * RISK_REWARD
-
-            future = df.iloc[-5:]
-            outcome = "Open"
-            for i in range(len(future)):
-                if future.iloc[i]['Low'] <= sl:
-                    outcome = "SL"
-                    break
-                elif future.iloc[i]['High'] >= tp:
-                    outcome = "TP"
-                    break
-
             results_today.append({
                 "Ticker": ticker,
-                "Entry": round(entry, 2),
-                "SL": round(sl, 2),
-                "TP": round(tp, 2),
+                "Close": round(latest['Close'], 2),
                 "RSI": round(latest['RSI_14'], 2),
                 "ATR%": round(latest['ATR_Ratio'] * 100, 2),
-                "ADX": round(latest['ADX'], 2),
-                "Outcome": outcome
+                "ADX": round(latest['ADX'], 2)
             })
     except Exception:
         continue
@@ -107,8 +88,6 @@ for ticker in tickers:
 if results_today:
     st.success(f"✅ {len(results_today)} stocks matched Real-Time Strategy today")
     df_today = pd.DataFrame(results_today)
-    winrate = (df_today['Outcome'] == "TP").mean() * 100
-    st.metric("🎯 Simulated Win Rate", f"{winrate:.1f}%")
     st.subheader("📊 Today's Matches")
     st.dataframe(df_today.sort_values(by='ATR%', ascending=False).reset_index(drop=True))
 else:

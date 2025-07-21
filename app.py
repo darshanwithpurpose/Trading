@@ -5,7 +5,7 @@ import ta
 from datetime import datetime, timedelta
 
 st.set_page_config(layout="wide")
-st.title("📈 Nifty 500 Breakout Scanner — Real-Time Optimized Strategy")
+st.title("📈 Nifty 500 Breakout Scanner — Relaxed Strategy")
 
 @st.cache_data(show_spinner=False)
 def get_nifty500_symbols():
@@ -35,27 +35,26 @@ for ticker in tickers:
 
         df = df.copy()
 
-        df['High_125'] = df['High'].rolling(125).max()
-        df['SMA_Volume_50'] = df['Volume'].rolling(50).mean()
+        df['High_100'] = df['High'].rolling(100).max()
+        df['SMA_Volume_30'] = df['Volume'].rolling(30).mean()
         df['RSI_14'] = ta.momentum.RSIIndicator(df['Close'], 14).rsi()
         df['ATR'] = ta.volatility.AverageTrueRange(df['High'], df['Low'], df['Close'], 14).average_true_range()
         df['ATR_Ratio'] = df['ATR'] / df['Close']
-        df['EMA_200'] = df['Close'].ewm(span=200).mean()
+        df['EMA_150'] = df['Close'].ewm(span=150).mean()
         adx = ta.trend.ADXIndicator(df['High'], df['Low'], df['Close'], 14)
         df['ADX'] = adx.adx()
 
         df.dropna(inplace=True)
 
         # Full Historical Scan (last 10 years)
-        for i in range(125, len(df)-5):
+        for i in range(150, len(df)-5):
             row = df.iloc[i]
-            prev_row = df.iloc[i-1]
             conds = [
-                row['Close'] > prev_row['High_125'],
-                row['Volume'] > 1.5 * prev_row['SMA_Volume_50'],
-                row['RSI_14'] < 75,
-                row['ADX'] > 20,
-                row['Close'] > row['EMA_200']
+                row['Close'] > row['High_100'],
+                row['Volume'] > 1.2 * row['SMA_Volume_30'],
+                row['RSI_14'] < 80,
+                row['ADX'] > 15,
+                row['Close'] > row['EMA_150']
             ]
             if all(conds):
                 match_date = df.index[i].date()
@@ -64,13 +63,12 @@ for ticker in tickers:
 
         # Today's scan
         latest = df.iloc[-1]
-        prev = df.iloc[-2]
         conds_today = [
-            latest['Close'] > prev['High_125'],
-            latest['Volume'] > 1.5 * prev['SMA_Volume_50'],
-            latest['RSI_14'] < 75,
-            latest['ADX'] > 20,
-            latest['Close'] > latest['EMA_200']
+            latest['Close'] > latest['High_100'],
+            latest['Volume'] > 1.2 * latest['SMA_Volume_30'],
+            latest['RSI_14'] < 80,
+            latest['ADX'] > 15,
+            latest['Close'] > latest['EMA_150']
         ]
 
         if all(conds_today):
@@ -86,15 +84,15 @@ for ticker in tickers:
 
 # Show results
 if results_today:
-    st.success(f"✅ {len(results_today)} stocks matched Real-Time Strategy today")
+    st.success(f"✅ {len(results_today)} stocks matched Relaxed Strategy today")
     df_today = pd.DataFrame(results_today)
     st.subheader("📊 Today's Matches")
     st.dataframe(df_today.sort_values(by='ATR%', ascending=False).reset_index(drop=True))
 else:
-    st.warning("No trade setups matched Real-Time Strategy today.")
+    st.warning("No trade setups matched Relaxed Strategy today.")
 
 if historical_details:
-    st.subheader("📆 Stocks that matched Real-Time Strategy in the last 10 years")
+    st.subheader("📆 Stocks that matched Relaxed Strategy in the last 10 years")
     df_hist = pd.DataFrame(historical_details)
     st.dataframe(df_hist.sort_values(by="Date Matched", ascending=False).reset_index(drop=True))
 else:

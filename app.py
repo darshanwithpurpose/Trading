@@ -19,26 +19,23 @@ def get_nifty500_symbols():
 
 @st.cache_data(show_spinner=False)
 def download_data(ticker):
-    return yf.download(ticker, period="400d", interval="1d", progress=False)
+    return yf.download(ticker, period="10y", interval="1d", progress=False)
 
-# Parameters
-MAX_TICKERS = st.sidebar.slider("🔢 Max stocks to scan", 10, 500, 50)
+# Always scan full Nifty 500
+tickers = get_nifty500_symbols()[:500]
 RISK_REWARD = st.sidebar.selectbox("Risk-Reward Ratio", [1, 1.5, 2], index=2)
 
-tickers = get_nifty500_symbols()[:MAX_TICKERS]
 results_today = []
-historical_passed = []
 historical_details = []
 
 for ticker in tickers:
     try:
         df = download_data(ticker)
-        if df.empty or not {"Close", "High", "Low", "Volume"}.issubset(df.columns) or len(df) < 200:
+        if df.empty or not {"Close", "High", "Low", "Volume"}.issubset(df.columns) or len(df) < 300:
             continue
 
         df = df.copy()
 
-        # Indicators
         df['High_125'] = df['High'].rolling(125).max()
         df['SMA_Volume_125'] = df['Volume'].rolling(125).mean()
         df['RSI_14'] = ta.momentum.RSIIndicator(df['Close'], 14).rsi()
@@ -51,7 +48,6 @@ for ticker in tickers:
         bb = ta.volatility.BollingerBands(df['Close'], 20, 2)
         df['BB_upper'] = bb.bollinger_hband()
 
-        # Anchored VWAP from 20-day swing low (simplified)
         anchor_low = df['Low'].rolling(20).min()
         anchored_vwap = (df['Close'] * df['Volume']).cumsum() / df['Volume'].cumsum()
         df['VWAP_Anchor'] = anchored_vwap.where(df['Low'] == anchor_low)
@@ -59,11 +55,10 @@ for ticker in tickers:
 
         df.dropna(inplace=True)
 
-        # Historical Scan (last 1 year)
-        past_year = df.iloc[:-5]
-        for i in range(125, len(past_year)-5):
-            row = past_year.iloc[i]
-            prev_row = past_year.iloc[i-1]
+        # Full Historical Scan (last 10 years)
+        for i in range(125, len(df)-5):
+            row = df.iloc[i]
+            prev_row = df.iloc[i-1]
             conds = [
                 row['Close'] > max(prev_row['High_125'], row['High']),
                 row['Volume'] > 2 * prev_row['SMA_Volume_125'],
@@ -74,8 +69,7 @@ for ticker in tickers:
                 row['Close'] > row['EMA_200']
             ]
             if all(conds):
-                match_date = past_year.index[i].date()
-                historical_passed.append(ticker)
+                match_date = df.index[i].date()
                 historical_details.append({"Ticker": ticker, "Date Matched": match_date})
                 break
 
@@ -93,7 +87,6 @@ for ticker in tickers:
         ]
 
         if all(conds_today):
-            # Backtest simulation
             entry = latest['Close']
             atr = latest['ATR']
             sl = entry - atr
@@ -122,7 +115,7 @@ for ticker in tickers:
     except Exception:
         continue
 
-# Display current signals
+# Show results
 if results_today:
     st.success(f"✅ {len(results_today)} stocks matched Elite 7 strategy today")
     df_today = pd.DataFrame(results_today)
@@ -133,10 +126,9 @@ if results_today:
 else:
     st.warning("No trade setups matched Elite 7 strategy today.")
 
-# Display historical winners
 if historical_details:
-    st.subheader("📆 Stocks that matched Elite 7 in the last 1 year")
+    st.subheader("📆 Stocks that matched Elite 7 in the last 10 years")
     df_hist = pd.DataFrame(historical_details)
     st.dataframe(df_hist.sort_values(by="Date Matched", ascending=False).reset_index(drop=True))
 else:
-    st.info("No historical matches found for Elite 7 criteria.")
+    st.info("No matches found over the past 10 years across all 500 Nifty stocks.")

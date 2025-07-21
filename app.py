@@ -28,6 +28,7 @@ RISK_REWARD = st.sidebar.selectbox("Risk-Reward Ratio", [1, 1.5, 2], index=2)
 tickers = get_nifty500_symbols()[:MAX_TICKERS]
 results_today = []
 historical_passed = []
+historical_details = []
 
 for ticker in tickers:
     try:
@@ -59,7 +60,7 @@ for ticker in tickers:
         df.dropna(inplace=True)
 
         # Historical Scan (last 1 year)
-        past_year = df.iloc[:-5]  # exclude future sim window
+        past_year = df.iloc[:-5]
         for i in range(125, len(past_year)-5):
             row = past_year.iloc[i]
             prev_row = past_year.iloc[i-1]
@@ -73,8 +74,10 @@ for ticker in tickers:
                 row['Close'] > row['EMA_200']
             ]
             if all(conds):
+                match_date = past_year.index[i].date()
                 historical_passed.append(ticker)
-                break  # only mark once per ticker
+                historical_details.append({"Ticker": ticker, "Date Matched": match_date})
+                break
 
         # Today's scan
         latest = df.iloc[-1]
@@ -131,8 +134,9 @@ else:
     st.warning("No trade setups matched Elite 7 strategy today.")
 
 # Display historical winners
-if historical_passed:
-    st.subheader("📈 Stocks that matched Elite 7 in the last 1 year")
-    st.write(sorted(set(historical_passed)))
+if historical_details:
+    st.subheader("📆 Stocks that matched Elite 7 in the last 1 year")
+    df_hist = pd.DataFrame(historical_details)
+    st.dataframe(df_hist.sort_values(by="Date Matched", ascending=False).reset_index(drop=True))
 else:
     st.info("No historical matches found for Elite 7 criteria.")

@@ -3,20 +3,33 @@ import yfinance as yf
 import pandas as pd
 import ta
 
-st.title("🇮🇳 Nifty 500 Trading Signal Scanner (No External Modules)")
+st.title("🇮🇳 Nifty 500 Trading Signal Scanner")
 
 @st.cache_data
 def get_nifty500_symbols():
     url = "https://www.moneycontrol.com/stocks/marketstats/indexcomp.php?optex=NSE500&opttopic=indexcomp&index=34"
     tables = pd.read_html(url)
     df = tables[0]
-    symbols = df['Company'].tolist()
-    codes = df['Symbol'].tolist()
-    return [code.strip() + ".NS" for code in codes if isinstance(code, str)]
 
-tickers = get_nifty500_symbols()
+    st.write("Table Columns from Moneycontrol:", df.columns.tolist())  # Debugging output
 
-MAX_TICKERS = st.sidebar.slider("🔢 Max tickers to scan", 10, 500, 50)
+    # Try using first column for symbols if 'Symbol' not found
+    if "Symbol" in df.columns:
+        return [sym.strip() + ".NS" for sym in df["Symbol"].dropna()]
+    elif "Company Name" in df.columns:
+        return [sym.strip() + ".NS" for sym in df["Company Name"].dropna()]
+    else:
+        # Fallback to first column if no named column exists
+        return [sym.strip() + ".NS" for sym in df.iloc[:, 1].dropna()]
+
+# Get tickers
+try:
+    tickers = get_nifty500_symbols()
+except Exception as e:
+    st.error(f"❌ Failed to load Nifty 500 stock list: {e}")
+    st.stop()
+
+MAX_TICKERS = st.sidebar.slider("🔢 Max tickers to scan", 10, 500, 30)
 tickers = tickers[:MAX_TICKERS]
 
 results = []
@@ -53,6 +66,7 @@ for ticker in tickers:
     except Exception:
         continue
 
+# Show results
 if results:
     st.success(f"✅ {len(results)} stocks meet the buy condition.")
     st.dataframe(pd.DataFrame(results))

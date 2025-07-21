@@ -5,7 +5,7 @@ import ta
 from datetime import datetime, timedelta
 
 st.set_page_config(layout="wide")
-st.title("📈 Nifty 500 Breakout Scanner — Real-Time Fix")
+st.title("📈 Nifty 500 Breakout Scanner — Simplified Breakout")
 
 @st.cache_data(show_spinner=False)
 def get_nifty500_symbols():
@@ -27,12 +27,10 @@ results_today = []
 historical_details = []
 condition_matrix = []
 
-# Initialize pass counters
 pass_counts = {
-    "Close>High_100": 0,
-    "Volume Spike": 0,
-    "RSI<80": 0,
-    "Close>EMA_150": 0,
+    "High Breakout": 0,
+    "Volume > SMA": 0,
+    "Close > EMA_150": 0,
     "Total": 0
 }
 
@@ -43,22 +41,19 @@ for ticker in tickers:
             continue
 
         df = df.copy()
-
         df['High_100'] = df['High'].rolling(100).max().shift(1)
         df['SMA_Volume_30'] = df['Volume'].rolling(30).mean()
-        df['RSI_14'] = ta.momentum.RSIIndicator(df['Close'], 14).rsi()
+        df['EMA_150'] = df['Close'].ewm(span=150).mean()
         df['ATR'] = ta.volatility.AverageTrueRange(df['High'], df['Low'], df['Close'], 14).average_true_range()
         df['ATR_Ratio'] = df['ATR'] / df['Close']
-        df['EMA_150'] = df['Close'].ewm(span=150).mean()
 
         df.dropna(inplace=True)
 
         for i in range(150, len(df)-5):
             row = df.iloc[i]
             conds = [
-                row['Close'] > row['High_100'],
-                row['Volume'] > 1.1 * row['SMA_Volume_30'],
-                row['RSI_14'] < 80,
+                row['High'] > row['High_100'],
+                row['Volume'] > row['SMA_Volume_30'],
                 row['Close'] > row['EMA_150']
             ]
             if all(conds):
@@ -68,46 +63,42 @@ for ticker in tickers:
 
         latest = df.iloc[-1]
         conds_today = [
-            latest['Close'] > latest['High_100'],
-            latest['Volume'] > 1.1 * latest['SMA_Volume_30'],
-            latest['RSI_14'] < 80,
+            latest['High'] > latest['High_100'],
+            latest['Volume'] > latest['SMA_Volume_30'],
             latest['Close'] > latest['EMA_150']
         ]
 
         pass_counts["Total"] += 1
-        pass_counts["Close>High_100"] += int(conds_today[0])
-        pass_counts["Volume Spike"] += int(conds_today[1])
-        pass_counts["RSI<80"] += int(conds_today[2])
-        pass_counts["Close>EMA_150"] += int(conds_today[3])
+        pass_counts["High Breakout"] += int(conds_today[0])
+        pass_counts["Volume > SMA"] += int(conds_today[1])
+        pass_counts["Close > EMA_150"] += int(conds_today[2])
 
         condition_matrix.append({
             "Ticker": ticker,
-            "Close>High_100": conds_today[0],
-            "Volume Spike": conds_today[1],
-            "RSI<80": conds_today[2],
-            "Close>EMA_150": conds_today[3]
+            "High > High_100": conds_today[0],
+            "Volume > SMA": conds_today[1],
+            "Close > EMA_150": conds_today[2]
         })
 
         if all(conds_today):
             results_today.append({
                 "Ticker": ticker,
                 "Close": round(latest['Close'], 2),
-                "RSI": round(latest['RSI_14'], 2),
                 "ATR%": round(latest['ATR_Ratio'] * 100, 2)
             })
     except Exception:
         continue
 
 if results_today:
-    st.success(f"✅ {len(results_today)} stocks matched Real-Time Fix strategy today")
+    st.success(f"✅ {len(results_today)} stocks matched Simplified Breakout strategy today")
     df_today = pd.DataFrame(results_today)
     st.subheader("📊 Today's Matches")
     st.dataframe(df_today.sort_values(by='ATR%', ascending=False).reset_index(drop=True))
 else:
-    st.warning("No trade setups matched Real-Time Fix strategy today.")
+    st.warning("No trade setups matched Simplified Breakout strategy today.")
 
 if historical_details:
-    st.subheader("📆 Stocks that matched Real-Time Fix strategy in the last 3 years")
+    st.subheader("📆 Stocks that matched Simplified Breakout strategy in the last 3 years")
     df_hist = pd.DataFrame(historical_details)
     st.dataframe(df_hist.sort_values(by="Date Matched", ascending=False).reset_index(drop=True))
 else:
@@ -119,11 +110,4 @@ if condition_matrix:
     st.dataframe(df_cond)
 
 st.subheader("📊 Condition Pass Rate")
-total_checked = pass_counts["Total"] if pass_counts["Total"] > 0 else 1
-pass_df = pd.DataFrame({
-    "Condition": ["Close>High_100", "Volume Spike", "RSI<80", "Close>EMA_150"],
-    "% Passed": [
-        round(100 * pass_counts[k] / total_checked, 2) for k in ["Close>High_100", "Volume Spike", "RSI<80", "Close>EMA_150"]
-    ]
-})
-st.dataframe(pass_df)
+total_checked = pass_counts["Total"] if pass_counts["Total"] >

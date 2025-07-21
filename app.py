@@ -2,53 +2,54 @@ import streamlit as st
 import yfinance as yf
 import pandas as pd
 import ta
+from niftystocks import nifty500
 
-st.title("📈 Trading Signal Scanner")
+st.title("🇮🇳 Nifty 500 Trading Signal Scanner")
 
-# User input
-ticker = st.text_input("Enter ticker symbol", "AAPL")
+# Fetch Indian tickers with .NS
+tickers = [sym + ".NS" for sym in nifty500.get_symbols()]
 
-if ticker:
-    try:
-        data = yf.download(ticker, period="200d", interval="1d", progress=False)
+# Limit scan count to avoid rate limits
+MAX_TICKERS = st.sidebar.slider("Max tickers to scan", 50, 500, 200)
+tickers = tickers[:MAX_TICKERS]
 
-        # Debug: Show available columns
-        st.write("Fetched columns:", data.columns.tolist())
+results = []
 
-        # Check required columns
-        required_cols = {"Close", "High", "Volume"}
-        if data.empty:
-            st.error("❌ No data fetched. Please check the ticker symbol or your internet connection.")
-        elif not required_cols.issubset(data.columns):
-            st.error("❌ Required columns not found in the data. Raw data might be malformed.")
-            st.dataframe(data.head())
-        elif len(data) < 130:
-            st.warning("⚠️ Not enough data to compute 125-day indicators. Try a longer time range.")
-        else:
-            # Clean & calculate indicators
-            data['High_125'] = data['High'].rolling(window=125).max()
-            data['SMA_Volume_125'] = data['Volume'].rolling(window=125).mean()
-            rsi = ta.momentum.RSIIndicator(close=data['Close'].fillna(method='ffill'), window=14)
-            data['RSI_14'] = rsi.rsi()
+for ticker in tickers:
+    data = yf.download(ticker, period="200d", interval="1d", progress=False)
+    if data.empty or set(["Close", "High", "Volume"]) - set(data.columns):
+        continue
+    if len(data) < 130:
+        continue
 
-            data['High_125_1d_ago'] = data['High_125'].shift(1)
-            data['SMA_Vol_1d_ago'] = data['SMA_Volume_125'].shift(1)
+    data['High_125'] = data['High'].rolling(125).max()
+    data['SMA_Vol_125'] = data['Volume'].rolling(125).mean()
+    data['RSI_14'] = ta.momentum.RSIIndicator(
+        close=data['Close'].fillna(method='ffill'), window=14
+    ).rsi()
+    data['High_125_1d'] = data['High_125'].shift(1)
+    data['SMA_Vol_1d'] = data['SMA_Vol_125'].shift(1)
+    data.dropna(inplace=True)
 
-            data.dropna(inplace=True)
+    latest = data.iloc[-1]
+    prev = data.iloc[-2]
+    if (
+        latest['Close'] > max(prev['High_125_1d'], latest['High'])
+        and latest['Volume'] > 2 * prev['SMA_Vol_1d']
+        and latest['RSI_14'] < 70
+    ):
+        results.append({
+            "Ticker": ticker,
+            "Close": latest['Close'],
+            "Volume": latest['Volume'],
+            "RSI_14": round(latest['RSI_14'], 2)
+        })
 
-            latest = data.iloc[-1]
-            prev = data.iloc[-2]
+# Display results
+if results:
+    df = pd.DataFrame(results)
+    st.success(f"🎯 {len(df)} buy signals found!")
+    st.dataframe(df)
+else:
+    st.info("No buy signals detected today.")
 
-            condition_1 = latest['Close'] > max(prev['High_125_1d_ago'], latest['High'])
-            condition_2 = latest['Volume'] > 2 * prev['SMA_Vol_1d_ago']
-            condition_3 = latest['RSI_14'] < 70
-
-            if condition_1 and condition_2 and condition_3:
-                st.success(f"✅ BUY SIGNAL for {ticker}")
-            else:
-                st.warning(f"⚠️ No signal for {ticker} based on criteria")
-
-            st.subheader("🔍 Latest Data")
-            st.dataframe(data.tail(10))
-    except Exception as e:
-        st.exception(f"Unhandled error: {e}")

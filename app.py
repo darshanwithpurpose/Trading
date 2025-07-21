@@ -21,11 +21,11 @@ def get_nifty500_symbols():
 def download_data(ticker):
     return yf.download(ticker, period="3y", interval="1d", progress=False)
 
-# Always scan full Nifty 500
 tickers = get_nifty500_symbols()[:500]
 
 results_today = []
 historical_details = []
+condition_matrix = []
 
 for ticker in tickers:
     try:
@@ -41,11 +41,9 @@ for ticker in tickers:
         df['ATR'] = ta.volatility.AverageTrueRange(df['High'], df['Low'], df['Close'], 14).average_true_range()
         df['ATR_Ratio'] = df['ATR'] / df['Close']
         df['EMA_150'] = df['Close'].ewm(span=150).mean()
-        # ADX temporarily removed for real-time flexibility
 
         df.dropna(inplace=True)
 
-        # Full Historical Scan (last 3 years)
         for i in range(150, len(df)-5):
             row = df.iloc[i]
             conds = [
@@ -59,7 +57,6 @@ for ticker in tickers:
                 historical_details.append({"Ticker": ticker, "Date Matched": match_date})
                 break
 
-        # Today's scan
         latest = df.iloc[-1]
         conds_today = [
             latest['Close'] > latest['High_100'],
@@ -67,6 +64,14 @@ for ticker in tickers:
             latest['RSI_14'] < 80,
             latest['Close'] > latest['EMA_150']
         ]
+
+        condition_matrix.append({
+            "Ticker": ticker,
+            "Close>High_100": conds_today[0],
+            "Volume Spike": conds_today[1],
+            "RSI<80": conds_today[2],
+            "Close>EMA_150": conds_today[3]
+        })
 
         if all(conds_today):
             results_today.append({
@@ -78,7 +83,6 @@ for ticker in tickers:
     except Exception:
         continue
 
-# Show results
 if results_today:
     st.success(f"✅ {len(results_today)} stocks matched Real-Time Fix strategy today")
     df_today = pd.DataFrame(results_today)
@@ -93,3 +97,8 @@ if historical_details:
     st.dataframe(df_hist.sort_values(by="Date Matched", ascending=False).reset_index(drop=True))
 else:
     st.info("No matches found over the past 3 years across all 500 Nifty stocks.")
+
+if condition_matrix:
+    st.subheader("🔍 Condition Matrix for Today")
+    df_cond = pd.DataFrame(condition_matrix)
+    st.dataframe(df_cond)

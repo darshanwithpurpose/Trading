@@ -1,120 +1,68 @@
 import streamlit as st
 import yfinance as yf
 import pandas as pd
+import numpy as np
 import ta
 from datetime import datetime, timedelta
 
-st.set_page_config(layout="wide")
-st.title("📈 Nifty 500 Breakout Scanner — Simplified Breakout")
+st.title("NSE Candlestick Pattern Profit Detector 📊")
 
-@st.cache_data(show_spinner=False)
-def get_nifty500_symbols():
-    url = "https://www.moneycontrol.com/stocks/marketstats/indexcomp.php?optex=NSE500&opttopic=indexcomp&index=34"
-    tables = pd.read_html(url)
-    df = tables[0]
-    if "Symbol" in df.columns:
-        return [sym.strip() + ".NS" for sym in df["Symbol"].dropna()]
-    else:
-        return [sym.strip() + ".NS" for sym in df.iloc[:, 1].dropna()]
+stock = st.text_input("Enter NSE stock symbol (e.g., INFY.NS)", "RELIANCE.NS")
+start_date = st.date_input("Start Date", datetime.today() - timedelta(days=365))
+end_date = st.date_input("End Date", datetime.today())
 
-@st.cache_data(show_spinner=False)
-def download_data(ticker):
-    return yf.download(ticker, period="3y", interval="1d", progress=False)
+def is_hammer(candle):
+    body = abs(candle['Close'] - candle['Open'])
+    lower_shadow = candle['Open'] - candle['Low'] if candle['Close'] > candle['Open'] else candle['Close'] - candle['Low']
+    upper_shadow = candle['High'] - max(candle['Close'], candle['Open'])
+    return lower_shadow > 2 * body and upper_shadow < 0.3 * body
 
-tickers = get_nifty500_symbols()[:500]
+def is_doji(candle):
+    return abs(candle['Open'] - candle['Close']) <= (0.1 * (candle['High'] - candle['Low']))
 
-results_today = []
-historical_details = []
-condition_matrix = []
+def is_inverted_hammer(candle):
+    body = abs(candle['Close'] - candle['Open'])
+    upper_shadow = candle['High'] - max(candle['Close'], candle['Open'])
+    lower_shadow = min(candle['Close'], candle['Open']) - candle['Low']
+    return upper_shadow > 2 * body and lower_shadow < 0.3 * body
 
-pass_counts = {
-    "High Breakout": 0,
-    "Volume > SMA": 0,
-    "Close > EMA_150": 0,
-    "Total": 0
-}
+def find_swing_low(df, i):
+    return df['Low'][i] < df['Low'][i - 2] and df['Low'][i] < df['Low'][i - 1] and df['Low'][i] < df['Low'][i + 1] and df['Low'][i] < df['Low'][i + 2]
 
-for ticker in tickers:
-    try:
-        df = download_data(ticker)
-        if df.empty or not {"Close", "High", "Low", "Volume"}.issubset(df.columns) or len(df) < 150:
-            continue
+def find_swing_high(df, i):
+    return df['High'][i] > df['High'][i - 2] and df['High'][i] > df['High'][i - 1] and df['High'][i] > df['High'][i + 1] and df['High'][i] > df['High'][i + 2]
 
-        df = df.copy()
-        df['High_100'] = df['High'].rolling(100).max().shift(1)
-        df['SMA_Volume_30'] = df['Volume'].rolling(30).mean()
-        df['EMA_150'] = df['Close'].ewm(span=150).mean()
-        df['ATR'] = ta.volatility.AverageTrueRange(df['High'], df['Low'], df['Close'], 14).average_true_range()
-        df['ATR_Ratio'] = df['ATR'] / df['Close']
+@st.cache_data
+def load_data(symbol, start, end):
+    df = yf.download(symbol, start=start, end=end)
+    df.dropna(inplace=True)
+    return df
 
-        df.dropna(inplace=True)
+df = load_data(stock, start_date, end_date)
 
-        for i in range(150, len(df)-5):
-            row = df.iloc[i]
-            conds = [
-                row['High'] > row['High_100'],
-                row['Volume'] > row['SMA_Volume_30'],
-                row['Close'] > row['EMA_150']
-            ]
-            if all(conds):
-                match_date = df.index[i].date()
-                historical_details.append({"Ticker": ticker, "Date Matched": match_date})
-                break
+signals = []
+for i in range(2, len(df) - 2):
+    candle = df.iloc[i]
+    next_candle = df.iloc[i + 1]
 
-        latest = df.iloc[-1]
-        conds_today = [
-            latest['High'] > latest['High_100'],
-            latest['Volume'] > latest['SMA_Volume_30'],
-            latest['Close'] > latest['EMA_150']
-        ]
+    if find_swing_low(df, i):
+        if is_hammer(candle) and next_candle['Close'] > candle['Close']:
+            signals.append({'Date': df.index[i], 'Type': 'Buy', 'Pattern': 'Hammer'})
+        elif is_doji(candle) and next_candle['Close'] > candle['Close']:
+            signals.append({'Date': df.index[i], 'Type': 'Buy', 'Pattern': 'Doji'})
+        elif is_inverted_hammer(candle) and next_candle['Close'] > candle['Close']:
+            signals.append({'Date': df.index[i], 'Type': 'Buy', 'Pattern': 'Inverted Hammer'})
 
-        pass_counts["Total"] += 1
-        pass_counts["High Breakout"] += int(conds_today[0])
-        pass_counts["Volume > SMA"] += int(conds_today[1])
-        pass_counts["Close > EMA_150"] += int(conds_today[2])
+    if find_swing_high(df, i):
+        if is_doji(candle) and next_candle['Close'] < candle['Close']:
+            signals.append({'Date': df.index[i], 'Type': 'Sell', 'Pattern': 'Doji'})
 
-        condition_matrix.append({
-            "Ticker": ticker,
-            "High > High_100": conds_today[0],
-            "Volume > SMA": conds_today[1],
-            "Close > EMA_150": conds_today[2]
-        })
+signal_df = pd.DataFrame(signals)
 
-        if all(conds_today):
-            results_today.append({
-                "Ticker": ticker,
-                "Close": round(latest['Close'], 2),
-                "ATR%": round(latest['ATR_Ratio'] * 100, 2)
-            })
-    except Exception:
-        continue
+st.subheader("Trade Signals (Based on Pattern Detection)")
+st.dataframe(signal_df)
 
-if results_today:
-    st.success(f"✅ {len(results_today)} stocks matched Simplified Breakout strategy today")
-    df_today = pd.DataFrame(results_today)
-    st.subheader("📊 Today's Matches")
-    st.dataframe(df_today.sort_values(by='ATR%', ascending=False).reset_index(drop=True))
+if not signal_df.empty:
+    st.success(f"Total profitable signals found: {len(signal_df)}")
 else:
-    st.warning("No trade setups matched Simplified Breakout strategy today.")
-
-if historical_details:
-    st.subheader("📆 Stocks that matched Simplified Breakout strategy in the last 3 years")
-    df_hist = pd.DataFrame(historical_details)
-    st.dataframe(df_hist.sort_values(by="Date Matched", ascending=False).reset_index(drop=True))
-else:
-    st.info("No matches found over the past 3 years across all 500 Nifty stocks.")
-
-if condition_matrix:
-    st.subheader("🔍 Condition Matrix for Today")
-    df_cond = pd.DataFrame(condition_matrix)
-    st.dataframe(df_cond)
-
-st.subheader("📊 Condition Pass Rate")
-total_checked = pass_counts["Total"] if pass_counts["Total"] > 0 else 1
-pass_df = pd.DataFrame({
-    "Condition": ["High Breakout", "Volume > SMA", "Close > EMA_150"],
-    "% Passed": [
-        round(100 * pass_counts[k] / total_checked, 2) for k in ["High Breakout", "Volume > SMA", "Close > EMA_150"]
-    ]
-})
-st.dataframe(pass_df)
+    st.warning("No patterns matched the criteria in this date range.")

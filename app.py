@@ -110,4 +110,11 @@ if condition_matrix:
     st.dataframe(df_cond)
 
 st.subheader("📊 Condition Pass Rate")
-total_checked = pass_counts["Total"] if pass_counts["Total"] >
+total_checked = pass_counts["Total"] if pass_counts["Total"] > 0 else 1
+pass_df = pd.DataFrame({
+    "Condition": ["High Breakout", "Volume > SMA", "Close > EMA_150"],
+    "% Passed": [
+        round(100 * pass_counts[k] / total_checked, 2) for k in ["High Breakout", "Volume > SMA", "Close > EMA_150"]
+    ]
+})
+st.dataframe(pass_df)

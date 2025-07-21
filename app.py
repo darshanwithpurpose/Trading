@@ -5,7 +5,7 @@ import ta
 from datetime import datetime, timedelta
 
 st.set_page_config(layout="wide")
-st.title("📈 Nifty 500 Breakout Scanner with Backtesting")
+st.title("📈 Nifty 500 Breakout Scanner — Elite 7 Filter Strategy")
 
 @st.cache_data(show_spinner=False)
 def get_nifty500_symbols():
@@ -26,7 +26,8 @@ MAX_TICKERS = st.sidebar.slider("🔢 Max stocks to scan", 10, 500, 50)
 RISK_REWARD = st.sidebar.selectbox("Risk-Reward Ratio", [1, 1.5, 2], index=2)
 
 tickers = get_nifty500_symbols()[:MAX_TICKERS]
-results = []
+results_today = []
+historical_passed = []
 
 for ticker in tickers:
     try:
@@ -43,29 +44,59 @@ for ticker in tickers:
         df['ATR'] = ta.volatility.AverageTrueRange(df['High'], df['Low'], df['Close'], 14).average_true_range()
         df['ATR_Ratio'] = df['ATR'] / df['Close']
         df['EMA_200'] = df['Close'].ewm(span=200).mean()
+        df['EMA_10'] = df['Close'].ewm(span=10).mean()
+        adx = ta.trend.ADXIndicator(df['High'], df['Low'], df['Close'], 14)
+        df['ADX'] = adx.adx()
         bb = ta.volatility.BollingerBands(df['Close'], 20, 2)
         df['BB_upper'] = bb.bollinger_hband()
 
+        # Anchored VWAP from 20-day swing low (simplified)
+        anchor_low = df['Low'].rolling(20).min()
+        anchored_vwap = (df['Close'] * df['Volume']).cumsum() / df['Volume'].cumsum()
+        df['VWAP_Anchor'] = anchored_vwap.where(df['Low'] == anchor_low)
+        df['VWAP_Anchor'].fillna(method='ffill', inplace=True)
+
         df.dropna(inplace=True)
+
+        # Historical Scan (last 1 year)
+        past_year = df.iloc[:-5]  # exclude future sim window
+        for i in range(125, len(past_year)-5):
+            row = past_year.iloc[i]
+            prev_row = past_year.iloc[i-1]
+            conds = [
+                row['Close'] > max(prev_row['High_125'], row['High']),
+                row['Volume'] > 2 * prev_row['SMA_Volume_125'],
+                40 < row['RSI_14'] < 70,
+                row['ADX'] > 20,
+                row['Close'] > row['VWAP_Anchor'],
+                abs(row['Close'] - row['EMA_10']) < 0.02 * row['Close'],
+                row['Close'] > row['EMA_200']
+            ]
+            if all(conds):
+                historical_passed.append(ticker)
+                break  # only mark once per ticker
+
+        # Today's scan
         latest = df.iloc[-1]
         prev = df.iloc[-2]
+        conds_today = [
+            latest['Close'] > max(prev['High_125'], latest['High']),
+            latest['Volume'] > 2 * prev['SMA_Volume_125'],
+            40 < latest['RSI_14'] < 70,
+            latest['ADX'] > 20,
+            latest['Close'] > latest['VWAP_Anchor'],
+            abs(latest['Close'] - latest['EMA_10']) < 0.02 * latest['Close'],
+            latest['Close'] > latest['EMA_200']
+        ]
 
-        # Conditions
-        cond1 = latest['Close'] > max(prev['High_125'], latest['High'])
-        cond2 = latest['Volume'] > 2 * prev['SMA_Volume_125']
-        cond3 = 40 < latest['RSI_14'] < 70
-        cond4 = latest['ATR_Ratio'] > 0.015
-        cond5 = latest['Close'] > latest['BB_upper']
-        cond6 = latest['Close'] > latest['EMA_200']
-
-        if all([cond1, cond2, cond3, cond4, cond5, cond6]):
+        if all(conds_today):
             # Backtest simulation
             entry = latest['Close']
             atr = latest['ATR']
             sl = entry - atr
             tp = entry + atr * RISK_REWARD
 
-            future = df.iloc[-5:]  # Simulate next 5 days
+            future = df.iloc[-5:]
             outcome = "Open"
             for i in range(len(future)):
                 if future.iloc[i]['Low'] <= sl:
@@ -75,25 +106,33 @@ for ticker in tickers:
                     outcome = "TP"
                     break
 
-            results.append({
+            results_today.append({
                 "Ticker": ticker,
                 "Entry": round(entry, 2),
                 "SL": round(sl, 2),
                 "TP": round(tp, 2),
                 "RSI": round(latest['RSI_14'], 2),
                 "ATR%": round(latest['ATR_Ratio'] * 100, 2),
+                "ADX": round(latest['ADX'], 2),
                 "Outcome": outcome
             })
     except Exception:
         continue
 
-if results:
-    st.success(f"✅ {len(results)} stocks matched criteria")
-    df_res = pd.DataFrame(results)
-
-    winrate = (df_res['Outcome'] == "TP").mean() * 100
+# Display current signals
+if results_today:
+    st.success(f"✅ {len(results_today)} stocks matched Elite 7 strategy today")
+    df_today = pd.DataFrame(results_today)
+    winrate = (df_today['Outcome'] == "TP").mean() * 100
     st.metric("🎯 Simulated Win Rate", f"{winrate:.1f}%")
-
-    st.dataframe(df_res.sort_values(by='ATR%', ascending=False).reset_index(drop=True))
+    st.subheader("📊 Today's Matches")
+    st.dataframe(df_today.sort_values(by='ATR%', ascending=False).reset_index(drop=True))
 else:
-    st.warning("No trade setups found based on current criteria.")
+    st.warning("No trade setups matched Elite 7 strategy today.")
+
+# Display historical winners
+if historical_passed:
+    st.subheader("📈 Stocks that matched Elite 7 in the last 1 year")
+    st.write(sorted(set(historical_passed)))
+else:
+    st.info("No historical matches found for Elite 7 criteria.")

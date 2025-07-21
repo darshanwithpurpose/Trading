@@ -118,13 +118,12 @@ if condition_matrix:
     df_cond = pd.DataFrame(condition_matrix)
     st.dataframe(df_cond)
 
-if pass_counts["Total"] > 0:
-    st.subheader("📊 Condition Pass Rate")
-    total = max(1, pass_counts["Total"])
-    pass_df = pd.DataFrame({
-        "Condition": ["Close>High_100", "Volume Spike", "RSI<80", "Close>EMA_150"],
-        "% Passed": [
-            round(100 * pass_counts[k] / total, 2) for k in ["Close>High_100", "Volume Spike", "RSI<80", "Close>EMA_150"]
-        ]
-    })
-    st.dataframe(pass_df)
+st.subheader("📊 Condition Pass Rate")
+total_checked = pass_counts["Total"] if pass_counts["Total"] > 0 else 1
+pass_df = pd.DataFrame({
+    "Condition": ["Close>High_100", "Volume Spike", "RSI<80", "Close>EMA_150"],
+    "% Passed": [
+        round(100 * pass_counts[k] / total_checked, 2) for k in ["Close>High_100", "Volume Spike", "RSI<80", "Close>EMA_150"]
+    ]
+})
+st.dataframe(pass_df)

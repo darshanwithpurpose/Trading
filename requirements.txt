@@ -1,5 +1,6 @@
 streamlit
-yfinance
-ta
 pandas
-lxml
+requests
+beautifulsoup4
+yfinance
+mplfinance

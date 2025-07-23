@@ -58,6 +58,9 @@ if mode == "Live Screener":
 
 elif mode == "3-Year EOD Backtest":
     symbols = load_nifty500_symbols()
+    st.write("Symbols Loaded:", len(symbols))
+    st.write(symbols[:10])
+
     start_date = (date.today() - timedelta(days=3 * 365)).strftime("%Y-%m-%d")
     end_date = date.today().strftime("%Y-%m-%d")
 
@@ -65,10 +68,13 @@ elif mode == "3-Year EOD Backtest":
         results = []
         with st.spinner("Running backtests... this may take several minutes."):
             for symbol in symbols:
+                st.write(f"Backtesting {symbol}...")
                 df = backtest_kotegawa_daily(symbol, start=start_date, end=end_date)
                 if not df.empty and "Error" not in df.columns:
                     df["Symbol"] = symbol
                     results.append(df)
+                elif "Error" in df.columns:
+                    st.error(f"{symbol}: {df['Error'].iloc[0]}")
 
         if results:
             final = pd.concat(results)

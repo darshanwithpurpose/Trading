@@ -3,29 +3,23 @@
 import streamlit as st
 import pandas as pd
 import requests
-from bs4 import BeautifulSoup
 from scanner import run_screener
 from utils.chart_plotter import plot_chart_with_signals
 
 st.set_page_config(page_title="Kotegawa Intraday Screener", layout="wide")
 st.title("📈 Kotegawa-Style Intraday Screener (Indian Market)")
 
-# Dynamically fetch Nifty 500 symbols from NSE India
+# Dynamically fetch Nifty 500 symbols from NSE official source
 @st.cache_data
 def load_nifty500_symbols():
     try:
-        url = "https://www.moneycontrol.com/stocks/marketstats/indexcomp.php?optex=NSE&opttopic=indexcomp&index=37"
-        headers = {"User-Agent": "Mozilla/5.0"}
-        r = requests.get(url, headers=headers)
-        soup = BeautifulSoup(r.text, "html.parser")
-        table = soup.find("table", {"class": "tbldata14"})
-        rows = table.find_all("tr")[1:]  # skip header row
-        symbols = []
-        for row in rows:
-            cols = row.find_all("td")
-            if cols:
-                symbols.append(cols[0].text.strip().upper())
-        return symbols
+        url = "https://www1.nseindia.com/content/indices/ind_nifty500list.csv"
+        headers = {
+            "User-Agent": "Mozilla/5.0",
+            "Referer": "https://www1.nseindia.com"
+        }
+        df = pd.read_csv(url, headers=headers)
+        return df['Symbol'].dropna().unique().tolist()
     except Exception as e:
         st.error("Failed to fetch Nifty 500 symbols dynamically: " + str(e))
         return []

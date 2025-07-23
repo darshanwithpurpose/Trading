@@ -58,17 +58,23 @@ if mode == "Live Screener":
 
 elif mode == "3-Year EOD Backtest":
     symbols = load_nifty500_symbols()
-    selected = st.selectbox("Select stock from Nifty 500", sorted(symbols))
-
     start_date = (date.today() - timedelta(days=3 * 365)).strftime("%Y-%m-%d")
     end_date = date.today().strftime("%Y-%m-%d")
 
-    if st.button("🔍 Run Backtest"):
-        df = backtest_kotegawa_daily(selected, start=start_date, end=end_date)
-        if "Error" in df.columns:
-            st.error(df['Error'].iloc[0])
+    if st.button("🔍 Run Backtest for All Nifty 500"):
+        results = []
+        with st.spinner("Running backtests... this may take several minutes."):
+            for symbol in symbols:
+                df = backtest_kotegawa_daily(symbol, start=start_date, end=end_date)
+                if not df.empty and "Error" not in df.columns:
+                    df["Symbol"] = symbol
+                    results.append(df)
+
+        if results:
+            final = pd.concat(results)
+            st.dataframe(final)
+            st.metric("Total Trades", len(final))
+            st.metric("Hit Target", (final['Outcome'] == 'HIT_TARGET').sum())
+            st.metric("Hit SL", (final['Outcome'] == 'HIT_SL').sum())
         else:
-            st.dataframe(df)
-            st.metric("Total Trades", len(df))
-            st.metric("Hit Target", (df['Outcome'] == 'HIT_TARGET').sum())
-            st.metric("Hit SL", (df['Outcome'] == 'HIT_SL').sum())
+            st.warning("No valid backtest results from Nifty 500 symbols.")

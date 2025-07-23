@@ -21,7 +21,7 @@ def load_nifty500_symbols():
         }
         response = requests.get(url, headers=headers)
         response.raise_for_status()
-        df = pd.read_csv(StringIO(response.text), header=0)
+        df = pd.read_csv(StringIO(response.text), header=0, sep=",", engine="python")
         return df['Symbol'].dropna().unique().tolist()
     except Exception as e:
         st.error("Failed to fetch Nifty 500 symbols dynamically: " + str(e))

@@ -3,10 +3,7 @@
 import streamlit as st
 import pandas as pd
 import requests
-import csv
-from io import StringIO
 import yfinance as yf
-from datetime import datetime
 from scanner import run_screener
 from utils.chart_plotter import plot_chart_with_signals
 
@@ -82,7 +79,9 @@ elif mode == "Live 5-Day Swing Screener":
                     if len(df) < 21:
                         continue
 
-                    df["SMA_20"] = df["Close"].rolling(20).mean()
+                    df["Close"] = pd.to_numeric(df["Close"], errors="coerce")
+                    df["SMA_20"] = df["Close"].rolling(window=20).mean()
+
                     last5 = df.iloc[-6:-1]
                     today = df.iloc[-1]
                     prev = df.iloc[-2]

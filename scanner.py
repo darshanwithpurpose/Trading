@@ -1,26 +1,37 @@
 # kotegawa_screener/scanner.py
 
+import yfinance as yf
 import pandas as pd
-from utils.data_fetcher import fetch_intraday_data
-from patterns import is_bullish_engulfing, is_hammer, near_support
+from patterns import is_bullish_engulfing, is_hammer
 
-def run_screener(symbols, tf):
-    signals = []
+def run_screener(symbols, timeframe="5m"):
+    all_signals = []
+
     for symbol in symbols:
-        df = fetch_intraday_data(symbol, tf)
-        if df is None or len(df) < 15:
+        try:
+            ticker = symbol if ".NS" in symbol else symbol + ".NS"
+            df = yf.download(ticker, period="1d", interval=timeframe, progress=False)
+            df.dropna(inplace=True)
+
+            df.reset_index(inplace=True)
+            df.columns = [col.replace(" ", "_") for col in df.columns]
+
+            for i in range(1, len(df)):
+                prev = df.iloc[i - 1]
+                curr = df.iloc[i]
+
+                if (
+                    is_bullish_engulfing(prev, curr) or is_hammer(curr)
+                ) and curr["Volume"] > df["Volume"].rolling(10).mean().iloc[i]:
+                    all_signals.append({
+                        "Stock": symbol,
+                        "Time": curr["Datetime"],
+                        "Close": round(curr["Close"], 2),
+                        "Volume": int(curr["Volume"])
+                    })
+
+        except Exception as e:
+            print(f"Error processing {symbol}: {e}")
             continue
 
-        for i in range(1, len(df)):
-            if (is_bullish_engulfing(df.iloc[i - 1], df.iloc[i]) or is_hammer(df.iloc[i])) and \
-               df['Volume'].iloc[i] > df['Volume'].rolling(10).mean().iloc[i] and \
-               near_support(df.iloc[i], df):
-                signals.append({
-                    "Stock": symbol,
-                    "Time": df.index[i],
-                    "Pattern": "Reversal",
-                    "Entry": df['High'].iloc[i] + 0.1,
-                    "SL": df['Low'].iloc[i],
-                    "Target": df['High'].iloc[i] + (df['High'].iloc[i] - df['Low'].iloc[i]) * 1.5
-                })
-    return pd.DataFrame(signals)
+    return pd.DataFrame(all_signals)

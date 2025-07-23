@@ -3,6 +3,7 @@
 import streamlit as st
 import pandas as pd
 import requests
+import csv
 from io import StringIO
 from scanner import run_screener
 from utils.chart_plotter import plot_chart_with_signals
@@ -10,7 +11,7 @@ from utils.chart_plotter import plot_chart_with_signals
 st.set_page_config(page_title="Kotegawa Intraday Screener", layout="wide")
 st.title("📈 Kotegawa-Style Intraday Screener (Indian Market)")
 
-# Dynamically fetch Nifty 500 symbols from NSE official source
+# Dynamically fetch Nifty 500 symbols using CSV parser
 @st.cache_data
 def load_nifty500_symbols():
     try:
@@ -21,8 +22,15 @@ def load_nifty500_symbols():
         }
         response = requests.get(url, headers=headers)
         response.raise_for_status()
-        df = pd.read_csv(StringIO(response.text), header=0, sep=",", engine="python")
-        return df['Symbol'].dropna().unique().tolist()
+
+        symbols = []
+        reader = csv.DictReader(StringIO(response.text))
+        for row in reader:
+            symbol = row.get("Symbol")
+            if symbol:
+                symbols.append(symbol.strip().upper())
+
+        return list(set(symbols))
     except Exception as e:
         st.error("Failed to fetch Nifty 500 symbols dynamically: " + str(e))
         return []

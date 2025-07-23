@@ -3,6 +3,7 @@
 import streamlit as st
 import pandas as pd
 import requests
+from io import StringIO
 from scanner import run_screener
 from utils.chart_plotter import plot_chart_with_signals
 
@@ -18,7 +19,9 @@ def load_nifty500_symbols():
             "User-Agent": "Mozilla/5.0",
             "Referer": "https://www1.nseindia.com"
         }
-        df = pd.read_csv(url, headers=headers)
+        response = requests.get(url, headers=headers)
+        response.raise_for_status()
+        df = pd.read_csv(StringIO(response.text), header=0)
         return df['Symbol'].dropna().unique().tolist()
     except Exception as e:
         st.error("Failed to fetch Nifty 500 symbols dynamically: " + str(e))

@@ -6,10 +6,9 @@ import requests
 import csv
 from io import StringIO
 import yfinance as yf
-from datetime import datetime, timedelta
+from datetime import datetime
 from scanner import run_screener
 from utils.chart_plotter import plot_chart_with_signals
-
 
 st.set_page_config(page_title="Kotegawa Screener", layout="wide")
 st.title("📈 Kotegawa Screener – Intraday & 5-Day Swing")
@@ -24,21 +23,28 @@ def load_nifty500_symbols():
         st.error("Failed to fetch Nifty 500 symbols: " + str(e))
         return []
 
-# Candle pattern checks
+# Candle pattern logic
 def is_bullish_engulfing(prev, curr):
     return (
-        prev["Close"] < prev["Open"] and
-        curr["Close"] > curr["Open"] and
-        curr["Open"] < prev["Close"] and
-        curr["Close"] > prev["Open"]
+        float(prev["Close"]) < float(prev["Open"]) and
+        float(curr["Close"]) > float(curr["Open"]) and
+        float(curr["Open"]) < float(prev["Close"]) and
+        float(curr["Close"]) > float(prev["Open"])
     )
 
 def is_hammer(candle):
-    body = abs(candle["Close"] - candle["Open"])
-    lower_wick = min(candle["Open"], candle["Close"]) - candle["Low"]
-    upper_wick = candle["High"] - max(candle["Open"], candle["Close"])
+    open_price = float(candle["Open"])
+    close_price = float(candle["Close"])
+    low = float(candle["Low"])
+    high = float(candle["High"])
+
+    body = abs(close_price - open_price)
+    lower_wick = min(open_price, close_price) - low
+    upper_wick = high - max(open_price, close_price)
+
     return lower_wick > 2 * body and upper_wick < body
 
+# Screener Mode Toggle
 mode = st.radio("Select Mode", ["Live Intraday Screener", "Live 5-Day Swing Screener"])
 
 if mode == "Live Intraday Screener":
@@ -63,6 +69,7 @@ if mode == "Live Intraday Screener":
 elif mode == "Live 5-Day Swing Screener":
     symbols = load_nifty500_symbols()
     st.write("Symbols Loaded:", len(symbols))
+
     if st.button("🔍 Run Live 5-Day Screener"):
         results = []
         with st.spinner("Scanning daily Kotegawa-style swing setups..."):
@@ -82,26 +89,34 @@ elif mode == "Live 5-Day Swing Screener":
 
                     high_5d = last5["High"].max()
                     avg_vol = last5["Volume"].mean()
-                    breakout = today["Close"] > high_5d
-                    high_volume = today["Volume"] > avg_vol
-                    bullish_pattern = is_bullish_engulfing(prev, today) or is_hammer(today)
-                    above_sma = today["Close"] > today["SMA_20"]
 
-                    if breakout and high_volume and bullish_pattern and above_sma:
-                        results.append({
-                            "Symbol": symbol,
-                            "Date": today.name.date(),
-                            "Close": round(today["Close"], 2),
-                            "Volume": int(today["Volume"]),
-                            "Breakout Above": round(high_5d, 2),
-                            "SMA_20": round(today["SMA_20"], 2)
-                        })
+                    try:
+                        close_price = float(today["Close"])
+                        volume = float(today["Volume"])
+                        sma_20 = float(today["SMA_20"])
+                        breakout = close_price > float(high_5d)
+                        high_volume = volume > float(avg_vol)
+                        above_sma = close_price > sma_20
+                        bullish_pattern = is_bullish_engulfing(prev, today) or is_hammer(today)
+
+                        if breakout and high_volume and bullish_pattern and above_sma:
+                            results.append({
+                                "Symbol": symbol,
+                                "Date": today.name.date(),
+                                "Close": round(close_price, 2),
+                                "Volume": int(volume),
+                                "Breakout Above": round(high_5d, 2),
+                                "SMA_20": round(sma_20, 2)
+                            })
+                    except Exception as inner_e:
+                        st.warning(f"{symbol}: {inner_e}")
 
                 except Exception as e:
                     st.warning(f"{symbol}: {e}")
 
         if results:
-            st.success(f"{len(results)} swing setups found.")
-            st.dataframe(pd.DataFrame(results))
+            df_result = pd.DataFrame(results)
+            st.success(f"{len(df_result)} swing setups found.")
+            st.dataframe(df_result)
         else:
             st.info("No stocks met Kotegawa 5-day swing criteria today.")

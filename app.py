@@ -2,9 +2,6 @@
 
 import streamlit as st
 import pandas as pd
-import requests
-import csv
-from io import StringIO
 from datetime import date, timedelta
 from scanner import run_screener
 from utils.chart_plotter import plot_chart_with_signals
@@ -16,22 +13,11 @@ st.title("📈 Kotegawa-Style Screener & Backtester (Indian Market)")
 @st.cache_data
 def load_nifty500_symbols():
     try:
-        url = "https://www1.nseindia.com/content/indices/ind_nifty500list.csv"
-        headers = {
-            "User-Agent": "Mozilla/5.0",
-            "Referer": "https://www1.nseindia.com"
-        }
-        response = requests.get(url, headers=headers)
-        response.raise_for_status()
-        symbols = []
-        reader = csv.DictReader(StringIO(response.text))
-        for row in reader:
-            symbol = row.get("Symbol")
-            if symbol:
-                symbols.append(symbol.strip().upper())
-        return list(set(symbols))
+        url = "https://archives.nseindia.com/content/indices/ind_nifty500list.csv"
+        df = pd.read_csv(url)
+        return df['Symbol'].dropna().unique().tolist()
     except Exception as e:
-        st.error("Failed to fetch Nifty 500 symbols dynamically: " + str(e))
+        st.error("Failed to fetch Nifty 500 symbols: " + str(e))
         return []
 
 # Screener or Backtest toggle

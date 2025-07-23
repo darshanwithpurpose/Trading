@@ -13,7 +13,6 @@ from backtest_eod import backtest_kotegawa_daily
 st.set_page_config(page_title="Kotegawa Intraday Screener", layout="wide")
 st.title("📈 Kotegawa-Style Screener & Backtester (Indian Market)")
 
-# Load Nifty 500 symbols from NSE dynamically
 @st.cache_data
 def load_nifty500_symbols():
     try:
@@ -24,7 +23,6 @@ def load_nifty500_symbols():
         }
         response = requests.get(url, headers=headers)
         response.raise_for_status()
-
         symbols = []
         reader = csv.DictReader(StringIO(response.text))
         for row in reader:
@@ -62,12 +60,15 @@ elif mode == "3-Year EOD Backtest":
     symbols = load_nifty500_symbols()
     selected = st.selectbox("Select stock from Nifty 500", sorted(symbols))
 
-    start_date = (date.today() - timedelta(days=3*365)).strftime("%Y-%m-%d")
+    start_date = (date.today() - timedelta(days=3 * 365)).strftime("%Y-%m-%d")
     end_date = date.today().strftime("%Y-%m-%d")
 
     if st.button("🔍 Run Backtest"):
         df = backtest_kotegawa_daily(selected, start=start_date, end=end_date)
-        st.dataframe(df)
-        st.metric("Total Trades", len(df))
-        st.metric("Hit Target", (df['Outcome'] == 'HIT_TARGET').sum())
-        st.metric("Hit SL", (df['Outcome'] == 'HIT_SL').sum())
+        if "Error" in df.columns:
+            st.error(df['Error'].iloc[0])
+        else:
+            st.dataframe(df)
+            st.metric("Total Trades", len(df))
+            st.metric("Hit Target", (df['Outcome'] == 'HIT_TARGET').sum())
+            st.metric("Hit SL", (df['Outcome'] == 'HIT_SL').sum())

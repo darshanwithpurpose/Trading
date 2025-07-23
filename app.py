@@ -7,11 +7,12 @@ import csv
 from io import StringIO
 from scanner import run_screener
 from utils.chart_plotter import plot_chart_with_signals
+from backtest_eod import backtest_kotegawa_daily
 
 st.set_page_config(page_title="Kotegawa Intraday Screener", layout="wide")
-st.title("📈 Kotegawa-Style Intraday Screener (Indian Market)")
+st.title("📈 Kotegawa-Style Screener & Backtester (Indian Market)")
 
-# Dynamically fetch Nifty 500 symbols using CSV parser
+# Load Nifty 500 symbols from NSE dynamically
 @st.cache_data
 def load_nifty500_symbols():
     try:
@@ -29,28 +30,41 @@ def load_nifty500_symbols():
             symbol = row.get("Symbol")
             if symbol:
                 symbols.append(symbol.strip().upper())
-
         return list(set(symbols))
     except Exception as e:
         st.error("Failed to fetch Nifty 500 symbols dynamically: " + str(e))
         return []
 
-# Toggle to use Nifty 500 automatically
-use_nifty500 = st.checkbox("Use Nifty 500 Stocks", value=True)
+# Screener or Backtest toggle
+mode = st.radio("Select Mode", ["Live Screener", "3-Year EOD Backtest"])
 
-if use_nifty500:
-    targets = load_nifty500_symbols()
-else:
-    symbols_input = st.text_input("Enter comma-separated stock symbols (e.g., BANKNIFTY,NIFTY,ADANIENT)", value="BANKNIFTY")
-    targets = [s.strip().upper() for s in symbols_input.split(",") if s.strip()]
-
-timeframe = st.selectbox("Select Candle Timeframe", ["5m", "15m"], index=0)
-
-if st.button("⏩ Run Screener"):
-    results = run_screener(targets, timeframe)
-    if results.empty:
-        st.warning("No setups found based on Kotegawa rules today.")
+if mode == "Live Screener":
+    use_nifty500 = st.checkbox("Use Nifty 500 Stocks", value=True)
+    if use_nifty500:
+        targets = load_nifty500_symbols()
     else:
-        st.dataframe(results)
-        for symbol in results['Stock'].unique():
-            st.pyplot(plot_chart_with_signals(symbol, timeframe))
+        symbols_input = st.text_input("Enter comma-separated stock symbols", value="BANKNIFTY")
+        targets = [s.strip().upper() for s in symbols_input.split(",") if s.strip()]
+
+    timeframe = st.selectbox("Select Candle Timeframe", ["5m", "15m"], index=0)
+
+    if st.button("⏩ Run Screener"):
+        results = run_screener(targets, timeframe)
+        if results.empty:
+            st.warning("No setups found based on Kotegawa rules today.")
+        else:
+            st.dataframe(results)
+            for symbol in results['Stock'].unique():
+                st.pyplot(plot_chart_with_signals(symbol, timeframe))
+
+elif mode == "3-Year EOD Backtest":
+    symbol = st.text_input("Enter a NSE stock symbol (e.g., ADANIENT)", value="ADANIENT").upper()
+    start_date = st.date_input("Start Date", pd.to_datetime("2021-01-01"))
+    end_date = st.date_input("End Date", pd.to_datetime("2023-12-31"))
+
+    if st.button("🔍 Run Backtest"):
+        df = backtest_kotegawa_daily(symbol, start=str(start_date), end=str(end_date))
+        st.dataframe(df)
+        st.metric("Total Trades", len(df))
+        st.metric("Hit Target", (df['Outcome'] == 'HIT_TARGET').sum())
+        st.metric("Hit SL", (df['Outcome'] == 'HIT_SL').sum())

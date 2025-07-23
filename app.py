@@ -5,6 +5,7 @@ import pandas as pd
 import requests
 import csv
 from io import StringIO
+from datetime import date, timedelta
 from scanner import run_screener
 from utils.chart_plotter import plot_chart_with_signals
 from backtest_eod import backtest_kotegawa_daily
@@ -58,12 +59,14 @@ if mode == "Live Screener":
                 st.pyplot(plot_chart_with_signals(symbol, timeframe))
 
 elif mode == "3-Year EOD Backtest":
-    symbol = st.text_input("Enter a NSE stock symbol (e.g., ADANIENT)", value="ADANIENT").upper()
-    start_date = st.date_input("Start Date", pd.to_datetime("2021-01-01"))
-    end_date = st.date_input("End Date", pd.to_datetime("2023-12-31"))
+    symbols = load_nifty500_symbols()
+    selected = st.selectbox("Select stock from Nifty 500", sorted(symbols))
+
+    start_date = (date.today() - timedelta(days=3*365)).strftime("%Y-%m-%d")
+    end_date = date.today().strftime("%Y-%m-%d")
 
     if st.button("🔍 Run Backtest"):
-        df = backtest_kotegawa_daily(symbol, start=str(start_date), end=str(end_date))
+        df = backtest_kotegawa_daily(selected, start=start_date, end=end_date)
         st.dataframe(df)
         st.metric("Total Trades", len(df))
         st.metric("Hit Target", (df['Outcome'] == 'HIT_TARGET').sum())
